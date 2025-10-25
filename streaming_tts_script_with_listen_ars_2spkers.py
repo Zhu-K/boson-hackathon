@@ -12,7 +12,7 @@ import pyaudio
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from prompts import TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT, VOICE_REFERENCE_PATH, VOICE_REFERENCE_PROMPT
+from prompts import TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT, VOICE_REFERENCE_PATH, VOICE_REFERENCE_PROMPT, VOICE_REFERENCE_PROMPT2, VOICE_REFERENCE_PATH2
 import numpy as np
 from collections import deque
 
@@ -109,7 +109,7 @@ def transcribe_audio(client: OpenAI, audio_bytes: bytes) -> str:
     return response.choices[0].message.content
 
 
-def tts_generate_streaming(client: OpenAI, text: str) -> Iterator:
+def tts_generate_streaming(client: OpenAI, text: str, original_text: str) -> Iterator:
     """Create a streaming TTS completion from the Higgs audio model.
 
     This function sets ``stream=True`` on the API call to enable real‑time
@@ -135,6 +135,16 @@ def tts_generate_streaming(client: OpenAI, text: str) -> Iterator:
         model="higgs-audio-generation-Hackathon",
         messages=[
             {"role": "system", "content": TTS_SYSTEM_PROMPT},
+            {"role": "user", "content": VOICE_REFERENCE_PROMPT2},
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "input_audio",
+                        "input_audio": {"data": b64(VOICE_REFERENCE_PATH2), "format": "wav"},
+                    }
+                ],
+            },
             {"role": "user", "content": VOICE_REFERENCE_PROMPT},
             {
                 "role": "assistant",
@@ -145,7 +155,8 @@ def tts_generate_streaming(client: OpenAI, text: str) -> Iterator:
                     }
                 ],
             },
-            {"role": "user", "content": f"[SPEAKER1] {text}"},
+            {"role": "user",
+                "content": f"[SPEAKER2] {original_text}\n\n[SPEAKER1] {text}"},
         ],
         modalities=["text", "audio"],
         max_completion_tokens=4096,
@@ -370,14 +381,13 @@ def main() -> None:
         # Capture an utterance from the microphone.
         print("Listening for speech...")
         audio_bytes = record_microphone_segment(
-            threshold=1000.0, input_device_index=input_device_index)
+            threshold=1500.0, input_device_index=input_device_index)
         print("Captured audio segment. Translating...")
 
         # 1. transcribe the captured audio to text
         captured_speech = transcribe_audio(client, audio_bytes)
 
-        # Exit if the user said "exit" or "quit"
-        if captured_speech.strip().lower().replace('.', '') in ["exit", "quit", "exit program"]:
+        if captured_speech.strip().lower in ["exit", "quit", "end program"]:
             break
 
         # 2. translate the text to an angry version
@@ -385,7 +395,8 @@ def main() -> None:
         print(f"Translated text: {angry_text}\nGenerating speech...")
 
         # 3. Request a streaming TTS response
-        stream_iter = tts_generate_streaming(client, angry_text)
+        stream_iter = tts_generate_streaming(
+            client, angry_text, captured_speech)
 
         print("Streaming generated speech...")
 
@@ -398,5 +409,5 @@ def main() -> None:
         print("Playback completed.")
 
 
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == "__main__":
     main()
