@@ -104,6 +104,7 @@ def record_microphone_segment(threshold: float = 1500.0, rate: int = 16_000,
     Record audio from the microphone when speech is detected.
     If 'duration' is provided, record for that many seconds instead of until silence.
     """
+    # smoe comment
     p = pyaudio.PyAudio()
     stream = p.open(
         format=pyaudio.paInt16,
