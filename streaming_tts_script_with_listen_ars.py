@@ -164,6 +164,7 @@ def record_microphone_segment(
     pre_seconds: float = 1.0,
     post_seconds: float = 1.0,
     silence_tolerance: float = 2.0,
+    input_device_index: Optional[int] = None,
 ) -> bytes:
     """Record audio from the default microphone and return a cropped segment.
 
@@ -207,6 +208,7 @@ def record_microphone_segment(
         rate=rate,
         input=True,
         frames_per_buffer=chunk_size,
+        input_device_index=input_device_index,
     )
     # Compute the number of frames that correspond to the pre/post buffers and silence tolerance
     pre_max_chunks = int(pre_seconds * rate / chunk_size)
@@ -336,14 +338,37 @@ def play_wav_file(path: str, volume: float = 1.0) -> None:
         p.terminate()
 
 
+def get_input_device_index() -> Optional[int]:
+    p = pyaudio.PyAudio()
+    default_device_index = p.get_default_input_device_info()['index']
+
+    for i in range(p.get_device_count()):
+        info = p.get_device_info_by_index(i)
+        if info.get('maxInputChannels') > 0:
+            if i == default_device_index:
+                print(f"*** {i}: {info['name']} - (default)")
+            else:
+                print(f"{i}: {info['name']}")
+
+    p.terminate()
+    # get user input to select device index
+    selected_index = input(
+        f"Enter the index of the input audio device to use (Or press enter to use DEFAULT): ")
+    if selected_index == "":
+        return default_device_index
+    return int(selected_index)
+
+
 def main() -> None:
     """Entry point for running a translation and streaming TTS demo."""
 
     client = get_client()
+    input_device_index = get_input_device_index()
 
     # Capture an utterance from the microphone.
     print("Listening for speech...")
-    audio_bytes = record_microphone_segment(threshold=1500.0)
+    audio_bytes = record_microphone_segment(
+        threshold=1500.0, input_device_index=input_device_index)
     print("Captured audio segment. Translating...")
 
     # 1. transcribe the captured audio to text
