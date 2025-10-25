@@ -1,0 +1,26 @@
+[SPEAKER1] "The ingredients, you say…"
+[SPEAKER1] "Which ingredients are missing?"
+
+[SPEAKER0] "Well, we don't have a roux."
+[SPEAKER0] "Also, not enough vegetables and meat…" 
+[SPEAKER0] "It's better to make a different meal"
+
+[SPEAKER1] (tone: seriously smug) "eh…" (hold: 2.5)
+[sound_effect_start] bulb ping [sound_effect_end]
+[SPEAKER1] "Ah!" 
+
+[SPEAKER1] "I'm gonna go buy them. How about it?"
+[SPEAKER0] (tone: doubtful uneasy) "Oh, well…"
+
+[SPEAKER0] "Okay."
+[SPEAKER0] "I'll leave it to you."
+
+[SPEAKER0] (thought) "This is a good opportunity for her…"
+[SPEAKER0] (thought) "I realised I've never asked her to go grocery shopping before…"
+[SPEAKER0] (thought) "…All right."
+
+[SPEAKER1] "You know, this is what people call…"
+[SPEAKER0] "An errand."
+[SPEAKER1] "…'Good work'?"
+
+[SPEAKER0] (exclaim) "That's close!!" 

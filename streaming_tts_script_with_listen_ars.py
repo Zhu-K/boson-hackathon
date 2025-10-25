@@ -9,16 +9,11 @@ import wave
 from typing import Iterable, Iterator, Optional
 
 import pyaudio
-from dotenv import load_dotenv
 from openai import OpenAI
 
 from prompts import TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT, VOICE_REFERENCE_PATH, VOICE_REFERENCE_PROMPT
 import numpy as np
 from collections import deque
-
-
-# Load environment variables from a .env file if present.
-load_dotenv()
 
 
 def b64(path: str) -> str:
@@ -207,6 +202,7 @@ def record_microphone_segment(
         rate=rate,
         input=True,
         frames_per_buffer=chunk_size,
+        input_device_index=1
     )
     # Compute the number of frames that correspond to the pre/post buffers and silence tolerance
     pre_max_chunks = int(pre_seconds * rate / chunk_size)
