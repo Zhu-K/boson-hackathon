@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎭 Higgs Audio Emotion Demo</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 800px;
+            width: 100%;
+        }
+
+        h1 {
+            text-align: center;
+            color: #FF6B6B;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #4ECDC4;
+            font-size: 1.2em;
+            margin-bottom: 30px;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        label {
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #333;
+        }
+
+        select, input[type="range"] {
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .slider-value {
+            text-align: center;
+            font-weight: 600;
+            color: #667eea;
+            margin-top: 5px;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 1.2em;
+            font-weight: 600;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            width: 100%;
+            margin-top: 20px;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .status {
+            background: #f0f0f0;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            min-height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .status.recording { background: #fff3cd; color: #856404; }
+        .status.processing { background: #d1ecf1; color: #0c5460; }
+        .status.success { background: #d4edda; color: #155724; }
+        .status.error { background: #f8d7da; color: #721c24; }
+
+        .result-box {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+            display: none;
+        }
+
+        .result-box.show {
+            display: block;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .result-label {
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 8px;
+        }
+
+        .result-text {
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .audio-player {
+            margin-top: 20px;
+            display: none;
+        }
+
+        .audio-player.show {
+            display: block;
+        }
+
+        audio {
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .footer {
+            text-align: center;
+            color: #999;
+            margin-top: 30px;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎭 Higgs Audio Emotion Demo</h1>
+        <p class="subtitle">Transform your speech with emotion in real-time!</p>
+
+        <div class="controls">
+            <div class="control-group">
+                <label for="mode">🎭 Emotion Mode</label>
+                <select id="mode">
+                    <option value="angry">Angry</option>
+                    <option value="sarcastic">Sarcastic</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="duration">⏱️ Recording Duration</label>
+                <input type="range" id="duration" min="2" max="10" step="0.5" value="5">
+                <div class="slider-value"><span id="duration-value">5.0</span> seconds</div>
+            </div>
+        </div>
+
+        <button id="recordBtn" onclick="startRecording()">🎙️ Start Recording</button>
+
+        <div id="status" class="status"></div>
+
+        <div id="transcription" class="result-box">
+            <div class="result-label">📝 Original Transcription:</div>
+            <div id="transcription-text" class="result-text"></div>
+        </div>
+
+        <div id="translation" class="result-box">
+            <div class="result-label">🎭 Emotional Translation:</div>
+            <div id="translation-text" class="result-text"></div>
+        </div>
+
+        <div id="audio-container" class="audio-player">
+            <div class="result-label">🔊 Generated Audio (Streaming):</div>
+            <div id="audio-status">Preparing audio player...</div>
+        </div>
+
+        <div class="footer">
+            Powered by Higgs Audio & Boson AI
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let audioContext;
+        let audioQueue = [];
+        let isPlaying = false;
+        let nextStartTime = 0;
+
+        // Update duration display
+        document.getElementById('duration').addEventListener('input', function() {
+            document.getElementById('duration-value').textContent = this.value;
+        });
+
+        // Initialize Web Audio API
+        function initAudioContext() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                nextStartTime = audioContext.currentTime;
+            }
+        }
+
+        function base64ToArrayBuffer(base64) {
+            const binaryString = window.atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        function playAudioChunk(pcmData, sampleRate = 24000) {
+            initAudioContext();
+            
+            // Convert PCM to AudioBuffer
+            const int16Array = new Int16Array(pcmData);
+            const float32Array = new Float32Array(int16Array.length);
+            
+            // Convert int16 to float32 (-1.0 to 1.0)
+            for (let i = 0; i < int16Array.length; i++) {
+                float32Array[i] = int16Array[i] / 32768.0;
+            }
+            
+            // Create audio buffer with specified sample rate
+            const audioBuffer = audioContext.createBuffer(1, float32Array.length, sampleRate);
+            audioBuffer.getChannelData(0).set(float32Array);
+            
+            // Create source and play
+            const source = audioContext.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(audioContext.destination);
+            
+            // Schedule playback
+            const startTime = Math.max(nextStartTime, audioContext.currentTime);
+            source.start(startTime);
+            
+            // Update next start time
+            nextStartTime = startTime + audioBuffer.duration;
+        }
+
+        function startRecording() {
+            const mode = document.getElementById('mode').value;
+            const duration = parseFloat(document.getElementById('duration').value);
+            const recordBtn = document.getElementById('recordBtn');
+            
+            // Reset UI
+            document.getElementById('transcription').classList.remove('show');
+            document.getElementById('translation').classList.remove('show');
+            document.getElementById('audio-container').classList.remove('show');
+            
+            // Reset audio
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            nextStartTime = 0;
+            
+            // Disable button
+            recordBtn.disabled = true;
+            
+            // Emit recording event
+            socket.emit('start_recording', { mode: mode, duration: duration });
+        }
+
+        // Socket event handlers
+        socket.on('status', function(data) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.className = 'status';
+            
+            if (data.step === 'recording') {
+                statusDiv.className = 'status recording';
+                statusDiv.innerHTML = '<div class="spinner"></div>' + data.message;
+            } else if (data.step.includes('complete')) {
+                statusDiv.className = 'status success';
+                statusDiv.textContent = '✅ ' + data.message;
+            } else if (data.step === 'complete') {
+                statusDiv.className = 'status success';
+                statusDiv.textContent = '✅ ' + data.message;
+                document.getElementById('recordBtn').disabled = false;
+            } else {
+                statusDiv.className = 'status processing';
+                statusDiv.innerHTML = '<div class="spinner"></div>' + data.message;
+            }
+        });
+
+        socket.on('transcription', function(data) {
+            document.getElementById('transcription-text').textContent = data.text;
+            document.getElementById('transcription').classList.add('show');
+        });
+
+        socket.on('translation', function(data) {
+            document.getElementById('translation-text').textContent = data.text;
+            document.getElementById('translation').classList.add('show');
+        });
+
+        socket.on('audio_chunk', function(data) {
+            const audioContainer = document.getElementById('audio-container');
+            audioContainer.classList.add('show');
+            document.getElementById('audio-status').textContent = '🔊 Playing audio in real-time...';
+            
+            // Decode and play audio chunk immediately
+            const pcmData = base64ToArrayBuffer(data.data);
+            playAudioChunk(pcmData);
+        });
+
+        socket.on('audio_complete', function() {
+            document.getElementById('audio-status').textContent = '✅ Audio playback complete!';
+        });
+
+        socket.on('laugh_track', function(data) {
+            document.getElementById('audio-status').textContent = '😂 Playing laugh track...';
+            
+            // Decode and play laugh track with its actual sample rate
+            const pcmData = base64ToArrayBuffer(data.data);
+            const sampleRate = data.sample_rate || 24000;
+            playAudioChunk(pcmData, sampleRate);
+        });
+
+        socket.on('error', function(data) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.className = 'status error';
+            statusDiv.textContent = '❌ Error: ' + data.message;
+            document.getElementById('recordBtn').disabled = false;
+        });
+    </script>
+</body>
+</html>
