@@ -195,36 +195,6 @@ def load_wav_file_as_pcm(path: str, target_rate: int = 24_000, volume: float = 0
         scaled = np.clip(audio_array * volume, -32768, 32767).astype(np.int16)
         
         return scaled.tobytes(), sample_rate
-
-def play_wav_file(path: str, volume: float = 1.0) -> None:
-    """Play a WAV file at a given volume (replaces deprecated audioop)."""
-    if not os.path.exists(path):
-        print(f"[WARN] File not found: {path}")
-        return
-
-    
-    with wave.open(path, "rb") as wf:
-        p = pyaudio.PyAudio()
-        print("Frame rate: ", wf.getframerate())
-        stream = p.open(
-            format=p.get_format_from_width(wf.getsampwidth()),
-            channels=wf.getnchannels(),
-            rate=wf.getframerate(),
-            output=True,
-        )
-
-        chunk = 1024
-        data = wf.readframes(chunk)
-        while data:
-            # Convert bytes to numpy array, scale, and clip
-            audio_array = np.frombuffer(data, dtype=np.int16)
-            scaled = np.clip(audio_array * volume, -32768, 32767).astype(np.int16)
-            stream.write(scaled.tobytes())
-            data = wf.readframes(chunk)
-
-        stream.stop_stream()
-        stream.close()
-        p.terminate()
         
 @app.route('/')
 def index():
