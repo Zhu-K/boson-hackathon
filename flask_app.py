@@ -19,7 +19,20 @@ from roast_conversation import (
     translate_emotion_with_history,
     clear_conversation_history,
     save_combined_conversation_audio,
-    increment_recording_counter
+    increment_recording_counter,
+    get_conversation_history_length
+)
+
+# Import functions from streaming script
+from streaming_tts_script_with_listen_ars import (
+    translate_emotion,
+    transcribe_audio,
+    tts_generate_streaming as streaming_tts_generate,
+    VoiceReference,
+    load_mode_config,
+    load_voice_config,
+    VOICE_CONFIG,
+    LAUGH_TRACK_PATH
 )
 
 # Load environment variables
@@ -47,74 +60,11 @@ def b64(path: str) -> str:
         return base64.b64encode(fh.read()).decode("utf-8")
 
 
-def translate_emotion(client: OpenAI, user_prompt: str, translator_prompt: str) -> str:
-    """Run the translation into either angry or sarcastic text."""
-    response = client.chat.completions.create(
-        model="Qwen3-32B-non-thinking-Hackathon",
-        messages=[
-            {"role": "system", "content": translator_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        max_tokens=4096,
-        temperature=0.7,
-    )
-    return response.choices[0].message.content
-
-
-def transcribe_audio(client: OpenAI, audio_bytes: bytes) -> str:
-    """Transcribe the recorded audio bytes using Higgs Audio."""
-    with io.BytesIO() as buffer:
-        with wave.open(buffer, "wb") as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)
-            wf.setframerate(16_000)
-            wf.writeframes(audio_bytes)
-        wav_data = buffer.getvalue()
-
-    audio_b64 = base64.b64encode(wav_data).decode("utf-8")
-
-    response = client.chat.completions.create(
-        model="higgs-audio-understanding-Hackathon",
-        messages=[
-            {"role": "system", "content": "Transcribe this audio for me."},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "input_audio", "input_audio": {"data": audio_b64, "format": "wav"}},
-                ],
-            },
-        ],
-        max_completion_tokens=256,
-        temperature=0.0,
-    )
-    return response.choices[0].message.content
-
-
 def tts_generate_streaming(client: OpenAI, text: str, tts_prompt: str, voice_prompt: str, ref_path: str) -> Iterator:
-    """Generate TTS for the given text using Higgs Audio."""
-    return client.chat.completions.create(
-        model="higgs-audio-generation-Hackathon",
-        messages=[
-            {"role": "system", "content": tts_prompt},
-            {"role": "user", "content": voice_prompt},
-            {
-                "role": "assistant",
-                "content": [
-                    {"type": "input_audio", "input_audio": {"data": b64(ref_path), "format": "wav"}},
-                ],
-            },
-            {"role": "user", "content": f"[SPEAKER1] {text}"},
-        ],
-        modalities=["text", "audio"],
-        max_completion_tokens=4096,
-        temperature=1.0,
-        top_p=0.95,
-        stream=True,
-        stop=["<|eot_id|>", "<|end_of_text|>", "<|audio_eos|>"],
-        extra_body={"top_k": 50},
-    )
-
-
+    """Wrapper function to use streaming script's TTS with prompt saving for roast mode."""
+    voice_ref = VoiceReference(ref_path, voice_prompt)
+    # Always save prompts in Flask app (since it's primarily used for roast mode)
+    return streaming_tts_generate(client, text, tts_prompt, voice_ref, save_prompt=True)
 
 
 def record_microphone_segment(duration: float = 5.0, rate: int = 16_000, chunk_size: int = 1024) -> bytes:
@@ -163,9 +113,6 @@ def load_wav_file_as_pcm(path: str, target_rate: int = 24_000, volume: float = 0
         
         return scaled.tobytes(), sample_rate
 
-
-
-
 @app.route('/')
 def index():
     """Render the main page."""
@@ -196,29 +143,41 @@ def handle_recording(data):
     try:
         mode = data.get('mode', 'angry')
         duration = float(data.get('duration', 5.0))
+        language = data.get('language', 'english')  # NEW: Language support
+        voice = data.get('voice', 'keegan')  # NEW: Voice selection support
         
-        # Increment recording counter for roast mode
-        if mode == "roast":
-            increment_recording_counter()
-        
-        # Load appropriate prompts
-        if mode == "angry":
-            from prompts import TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT, VOICE_REFERENCE_PROMPT, VOICE_REFERENCE_PATH
-            laugh_track = "./audios/sitcom_laugh_track.wav"
-        elif mode == "sarcastic":
-            from prompts_sarcastic import TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT, VOICE_REFERENCE_PROMPT, VOICE_REFERENCE_PATH
-            laugh_track = "./audios/sitcom_laugh_track.wav"
-        elif mode == "roast":
-            from prompts_heckle import TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT, VOICE_REFERENCE_PROMPT, VOICE_REFERENCE_PATH
-            laugh_track = "./audios/sitcom_laugh_track.wav"
-        else:
-            from prompts_sarcastic import TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT, VOICE_REFERENCE_PROMPT, VOICE_REFERENCE_PATH
-            laugh_track = "./audios/sitcom_laugh_track.wav"
+        # Load mode configuration (for emotion translation) - NEW: Using streaming script logic
+        try:
+            TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT, LANGUAGE_TEMPLATE = load_mode_config(mode)
+            with open("tts_system_prompt.txt", "w") as f:
+                f.write(TTS_SYSTEM_PROMPT)
+            if language != "english":
+                language_instruction = LANGUAGE_TEMPLATE.format(language=language)
+            else:
+                language_instruction = ""
+                
+            llm_system_prompt = TRANSLATOR_SYSTEM_PROMPT.format(
+                language_instruction=language_instruction, 
+                language_instruction_repeated=language_instruction
+            )
+            # Save prepared LLM prompt for debugging
+            with open("prepared_llm.txt", "w") as f:
+                f.write(llm_system_prompt)
+        except (ValueError, ImportError, AttributeError) as e:
+            emit('error', {'message': f"Error loading mode configuration: {e}"})
+            return
 
         # Initialize client
         global client
         if client is None:
             client = get_client()
+
+        # Handle roast mode conversation history - NEW: From streaming script
+        is_roast_mode = mode == "roast"
+        if is_roast_mode:
+            increment_recording_counter()
+            history_length = get_conversation_history_length()
+            print(f"💬 Found {history_length} previous messages in conversation history")
 
         # Step 1: Record
         emit('status', {'step': 'recording', 'message': f'Recording for {duration} seconds...'})
@@ -231,14 +190,32 @@ def handle_recording(data):
         emit('transcription', {'text': captured_speech})
         emit('status', {'step': 'transcription_complete', 'message': 'Transcription complete!'})
 
+        # Load voice configuration - NEW: From streaming script
+        try:
+            voice_reference = load_voice_config(
+                voice, 
+                recorded_audio=audio_bytes if voice == "my_voice" else None,
+                transcription=captured_speech if voice == "my_voice" else None
+            )
+        except ValueError as e:
+            emit('error', {'message': f"Error loading voice configuration: {e}"})
+            return
+        except FileNotFoundError as e:
+            emit('error', {'message': f"Error: {e}"})
+            return
+
+        # Verify laugh track exists - NEW: From streaming script
+        if not os.path.exists(LAUGH_TRACK_PATH):
+            print(f"⚠️  Warning: Laugh track file not found: {LAUGH_TRACK_PATH}")
+
         # Step 3: Translate
         emit('status', {'step': 'translating', 'message': f'Translating to {mode} mode...'})
         
         # Use conversation-aware translation for roast mode
-        if mode == "roast":
-            emotional_text = translate_emotion_with_history(client, captured_speech, TRANSLATOR_SYSTEM_PROMPT)
+        if is_roast_mode:
+            emotional_text = translate_emotion_with_history(client, captured_speech, llm_system_prompt)
         else:
-            emotional_text = translate_emotion(client, captured_speech, TRANSLATOR_SYSTEM_PROMPT)
+            emotional_text = translate_emotion(client, captured_speech, llm_system_prompt)
             
         emit('translation', {'text': emotional_text})
         emit('status', {'step': 'translation_complete', 'message': 'Translation complete!'})
@@ -246,14 +223,36 @@ def handle_recording(data):
         # Step 4: TTS - Stream audio chunks in real-time
         emit('status', {'step': 'generating_audio', 'message': 'Generating emotional speech...'})
         
-        # Use TTS generation (same for all modes, no conversation history needed for TTS)
-        stream_iter = tts_generate_streaming(
-            client, emotional_text,
-            TTS_SYSTEM_PROMPT, VOICE_REFERENCE_PROMPT, VOICE_REFERENCE_PATH
-        )
-        
-        # Collect audio chunks for saving (roast mode only)
+        # NEW: Enhanced TTS logic from streaming script
         assistant_audio_chunks = []
+        
+        if is_roast_mode:
+            print("Using interactive roast mode")
+            # Handle voice cloning for my_voice - NEW: From streaming script
+            ref_path = VOICE_CONFIG[voice]["reference_path"]
+            if ref_path is None:  # Handle my_voice case
+                temp_ref_path = "temp_voice_reference.wav"
+                with wave.open(temp_ref_path, 'wb') as wf:
+                    wf.setnchannels(1)
+                    wf.setsampwidth(2)
+                    wf.setframerate(16_000)
+                    wf.writeframes(audio_bytes)
+                ref_path = temp_ref_path
+            
+            # Use streaming TTS with prompt saving
+            stream_iter = streaming_tts_generate(
+                client, emotional_text, TTS_SYSTEM_PROMPT, 
+                voice_reference, save_prompt=True
+            )
+            
+            # Clean up temporary file if created
+            temp_ref_created = ref_path == "temp_voice_reference.wav"
+        else:
+            # Use regular TTS
+            stream_iter = streaming_tts_generate(
+                client, emotional_text, TTS_SYSTEM_PROMPT, voice_reference
+            )
+            temp_ref_created = False
         
         # Stream audio chunks to client
         for chunk in stream_iter:
@@ -269,19 +268,23 @@ def handle_recording(data):
             emit('audio_chunk', {'data': b64_data})
             
             # Collect chunks for roast mode history
-            if mode == "roast":
+            if is_roast_mode:
                 assistant_audio_chunks.append(base64.b64decode(b64_data))
+        
+        # Clean up temporary voice reference file
+        if temp_ref_created and os.path.exists("temp_voice_reference.wav"):
+            os.remove("temp_voice_reference.wav")
         
         emit('audio_complete', {})
         
-        # Save conversation to history for roast mode
-        if mode == "roast":
+        # Save conversation to history for roast mode - ENHANCED: From streaming script
+        if is_roast_mode:
             try:
-                # First add user input to history
+                # Save user input to history
                 user_audio_path = save_audio_to_history(audio_bytes, captured_speech, is_user=True)
                 add_to_conversation_history(captured_speech, user_audio_path, is_user=True)
                 
-                # Then add assistant response to history
+                # Save assistant response to history
                 if assistant_audio_chunks:
                     assistant_pcm = b"".join(assistant_audio_chunks)
                     assistant_audio_path = save_audio_to_history(assistant_pcm, emotional_text, is_user=False)
@@ -293,21 +296,30 @@ def handle_recording(data):
         
         # Step 5: Send laugh track
         emit('status', {'step': 'laugh_track', 'message': 'Adding laugh track...'})
-        laugh_pcm, laugh_rate = load_wav_file_as_pcm(laugh_track, volume=0.25)
+        laugh_pcm, laugh_rate = load_wav_file_as_pcm(LAUGH_TRACK_PATH, volume=0.25)  # NEW: Use LAUGH_TRACK_PATH
         if laugh_pcm:
             # Send laugh track as base64 with sample rate
             laugh_b64 = base64.b64encode(laugh_pcm).decode('utf-8')
             emit('laugh_track', {'data': laugh_b64, 'sample_rate': laugh_rate})
         
-        # Step 6: Save combined audio for roast mode
-        if mode == "roast":
+        # Step 6: Save combined audio for roast mode - ENHANCED: From streaming script
+        if is_roast_mode:
             try:
                 emit('status', {'step': 'saving_combined', 'message': 'Saving combined audio...'})
                 assistant_pcm = b"".join(assistant_audio_chunks) if assistant_audio_chunks else b""
+                
+                # Load laugh track for combining - NEW: From streaming script
+                laugh_pcm_for_combining = None
+                if os.path.exists(LAUGH_TRACK_PATH):
+                    with wave.open(LAUGH_TRACK_PATH, 'rb') as wf:
+                        laugh_frames = wf.readframes(wf.getnframes())
+                        laugh_pcm_for_combining = np.frombuffer(laugh_frames, dtype=np.int16).tobytes()
+                
                 combined_path = save_combined_conversation_audio(
-                    audio_bytes, assistant_pcm, laugh_pcm
+                    audio_bytes, assistant_pcm, laugh_pcm_for_combining
                 )
-                print(f"Combined audio saved to: {combined_path}")
+                print(f"💾 Combined audio saved: {combined_path}")
+                print(f"📁 Prompts saved: qwen_prompts/ and tts_prompts/")
             except Exception as e:
                 print(f"ERROR: Failed to save combined audio: {e}")
                 import traceback

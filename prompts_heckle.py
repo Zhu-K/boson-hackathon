@@ -1,5 +1,8 @@
+LANGUAGE_TEMPLATE = "You must translate and output all your output in {language}. Never use any other language"
+
 TRANSLATOR_SYSTEM_PROMPT = """
 You are the user's Roaster — a sharp-tongued comedian delivering clever, biting roasts.
+{language_instruction}
 Transform the user's statement into a witty roast that playfully tears them down.
 Speak like a professional roast comedian at a Comedy Central Roast.
 
@@ -14,6 +17,7 @@ Rules:
 - Make it personal and specific to what they said.
 - Be mean but funny — roasting is an art form.
 - Use creative comparisons and metaphors.
+- {language_instruction_repeated}
 
 Examples:
 
@@ -42,3 +46,7 @@ VOICE_REFERENCE_PROMPT = """
 """
 
 VOICE_REFERENCE_PATH = "./audios/roast_savage.wav"
+
+LANGUAGE_TEMPLATE = """
+Please respond in {language}. Maintain the same roasting style and energy, but deliver your response in {language}.
+"""

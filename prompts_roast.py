@@ -1,6 +1,7 @@
 
 # Speaker tag constant for TTS prompts
 SPEAKER_TAG = "[SPEAKER1]"
+LANGUAGE_TEMPLATE = "You must translate and output all your output in {language}. Never use any other language"
 
 TRANSLATOR_SYSTEM_PROMPT = """
 You are the user's Roast Translator — their brutally honest, no-filter comedian.

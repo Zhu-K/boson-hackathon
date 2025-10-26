@@ -11,6 +11,7 @@ import time
 import wave
 from collections import deque
 from typing import Dict, Iterator, List
+import re 
 
 import numpy as np
 from openai import OpenAI
@@ -214,19 +215,6 @@ def build_qwen_messages(user_text: str, system_prompt: str) -> List[Dict]:
     return messages
 
 
-def build_tts_messages(text: str, system_prompt: str, voice_prompt: str, ref_path: str) -> List[Dict]:
-    """Build message array for TTS model with voice conditioning only."""
-    return [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": voice_prompt},
-        {
-            "role": "assistant",
-            "content": [
-                {"type": "input_audio", "input_audio": {"data": _b64_encode_file(ref_path), "format": "wav"}},
-            ],
-        },
-        {"role": "user", "content": f"[SPEAKER1] {text}"}
-    ]
 
 
 # =============================================================================
@@ -244,22 +232,7 @@ def translate_emotion_with_history(client: OpenAI, user_text: str, system_prompt
         max_tokens=4096,
         temperature=0.7,
     )
-    return response.choices[0].message.content
+    content = response.choices[0].message.content
+    output = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+    return output
 
-
-def tts_generate_streaming(client: OpenAI, text: str, system_prompt: str, voice_prompt: str, ref_path: str) -> Iterator:
-    """Generate streaming TTS with voice conditioning."""
-    messages = build_tts_messages(text, system_prompt, voice_prompt, ref_path)
-    _save_prompt_context(messages, text, "tts")
-    
-    return client.chat.completions.create(
-        model="higgs-audio-generation-Hackathon",
-        messages=messages,
-        modalities=["text", "audio"],
-        max_completion_tokens=4096,
-        temperature=1.0,
-        top_p=0.95,
-        stream=True,
-        stop=["<|eot_id|>", "<|end_of_text|>", "<|audio_eos|>"],
-        extra_body={"top_k": 50},
-    )
