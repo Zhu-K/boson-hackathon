@@ -107,6 +107,64 @@
             cursor: not-allowed;
         }
 
+        #continueBtn {
+            background: linear-gradient(135deg, #4ECDC4 0%, #44A08D 100%);
+            margin-top: 10px;
+        }
+
+        #continueBtn:hover:not(:disabled) {
+            box-shadow: 0 10px 20px rgba(78, 205, 196, 0.4);
+        }
+
+        #conversation-history {
+            margin: 20px 0;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .history-exchange {
+            background: #f8f9fa;
+            border-radius: 10px;
+            margin: 15px 0;
+            padding: 15px;
+            border-left: 4px solid #667eea;
+        }
+
+        .history-exchange.user {
+            border-left-color: #4ECDC4;
+            background: #f0fdfc;
+        }
+
+        .history-exchange.assistant {
+            border-left-color: #FF6B6B;
+            background: #fef7f7;
+        }
+
+        .history-item {
+            margin: 8px 0;
+        }
+
+        .history-label {
+            font-weight: 600;
+            color: #667eea;
+            font-size: 0.9em;
+            margin-bottom: 5px;
+        }
+
+        .history-text {
+            color: #333;
+            line-height: 1.4;
+        }
+
+        .history-audio {
+            margin-top: 10px;
+        }
+
+        .history-audio audio {
+            width: 100%;
+            height: 32px;
+        }
+
         .status {
             background: #f0f0f0;
             padding: 15px;
@@ -208,6 +266,7 @@
                 <select id="mode">
                     <option value="angry">Angry</option>
                     <option value="sarcastic">Sarcastic</option>
+                    <option value="roast">Roast</option>
                 </select>
             </div>
 
@@ -219,22 +278,41 @@
         </div>
 
         <button id="recordBtn" onclick="startRecording()">🎙️ Start Recording</button>
+        <button id="continueBtn" onclick="continueConversation()" style="display: none;">🔄 Continue Conversation</button>
+        
+        <div id="roast-controls" style="display: none; text-align: center; margin: 10px 0;">
+            <div id="history-indicator" style="color: #4ECDC4; font-size: 0.9em; margin-bottom: 10px;">
+                💬 Conversation history active
+            </div>
+            <button id="clearHistoryBtn" onclick="clearHistory()" style="width: auto; padding: 8px 16px; font-size: 0.9em; background: linear-gradient(135deg, #FF6B6B, #FF8E53);">
+                🗑️ Clear History
+            </button>
+        </div>
 
         <div id="status" class="status"></div>
 
-        <div id="transcription" class="result-box">
-            <div class="result-label">📝 Original Transcription:</div>
-            <div id="transcription-text" class="result-text"></div>
+        <!-- Conversation History for Roast Mode -->
+        <div id="conversation-history" style="display: none;">
+            <div class="result-label">💬 Conversation History:</div>
+            <div id="history-container"></div>
         </div>
 
-        <div id="translation" class="result-box">
-            <div class="result-label">🎭 Emotional Translation:</div>
-            <div id="translation-text" class="result-text"></div>
-        </div>
+        <!-- Current Exchange -->
+        <div id="current-exchange">
+            <div id="transcription" class="result-box">
+                <div class="result-label">📝 Original Transcription:</div>
+                <div id="transcription-text" class="result-text"></div>
+            </div>
 
-        <div id="audio-container" class="audio-player">
-            <div class="result-label">🔊 Generated Audio (Streaming):</div>
-            <div id="audio-status">Preparing audio player...</div>
+            <div id="translation" class="result-box">
+                <div class="result-label">🎭 Emotional Translation:</div>
+                <div id="translation-text" class="result-text"></div>
+            </div>
+
+            <div id="audio-container" class="audio-player">
+                <div class="result-label">🔊 Generated Audio (Streaming):</div>
+                <div id="audio-status">Preparing audio player...</div>
+            </div>
         </div>
 
         <div class="footer">
@@ -254,6 +332,50 @@
             document.getElementById('duration-value').textContent = this.value;
         });
 
+        // Check conversation history status
+        function checkHistoryStatus() {
+            const mode = document.getElementById('mode').value;
+            if (mode === 'roast') {
+                fetch('/history_status')
+                    .then(response => response.json())
+                    .then(data => {
+                        const roastControls = document.getElementById('roast-controls');
+                        const continueBtn = document.getElementById('continueBtn');
+                        
+                        if (data.has_history) {
+                            roastControls.style.display = 'block';
+                            continueBtn.style.display = 'block';
+                            continueBtn.disabled = false;
+                        } else {
+                            roastControls.style.display = 'none';
+                            continueBtn.style.display = 'none';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error checking history status:', error);
+                    });
+            }
+        }
+
+        // Handle mode changes
+        document.getElementById('mode').addEventListener('change', function() {
+            const roastControls = document.getElementById('roast-controls');
+            const continueBtn = document.getElementById('continueBtn');
+            
+            if (this.value === 'roast') {
+                checkHistoryStatus();
+            } else {
+                // Hide roast-specific controls for other modes
+                roastControls.style.display = 'none';
+                continueBtn.style.display = 'none';
+            }
+        });
+
+        // Check history status on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            checkHistoryStatus();
+        });
+
         // Initialize Web Audio API
         function initAudioContext() {
             if (!audioContext) {
@@ -270,6 +392,46 @@
                 bytes[i] = binaryString.charCodeAt(i);
             }
             return bytes.buffer;
+        }
+
+        function createWavBlob(pcmData, sampleRate) {
+            const numChannels = 1; // mono
+            const bitsPerSample = 16;
+            const bytesPerSample = bitsPerSample / 8;
+            const blockAlign = numChannels * bytesPerSample;
+            const byteRate = sampleRate * blockAlign;
+            const dataSize = pcmData.length;
+            const fileSize = 36 + dataSize;
+
+            const buffer = new ArrayBuffer(44 + dataSize);
+            const view = new DataView(buffer);
+
+            // WAV header
+            const writeString = (offset, string) => {
+                for (let i = 0; i < string.length; i++) {
+                    view.setUint8(offset + i, string.charCodeAt(i));
+                }
+            };
+
+            writeString(0, 'RIFF');
+            view.setUint32(4, fileSize, true);
+            writeString(8, 'WAVE');
+            writeString(12, 'fmt ');
+            view.setUint32(16, 16, true); // fmt chunk size
+            view.setUint16(20, 1, true); // PCM format
+            view.setUint16(22, numChannels, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, byteRate, true);
+            view.setUint16(32, blockAlign, true);
+            view.setUint16(34, bitsPerSample, true);
+            writeString(36, 'data');
+            view.setUint32(40, dataSize, true);
+
+            // Copy PCM data
+            const pcmView = new Uint8Array(buffer, 44);
+            pcmView.set(new Uint8Array(pcmData));
+
+            return new Blob([buffer], { type: 'audio/wav' });
         }
 
         function playAudioChunk(pcmData, sampleRate = 24000) {
@@ -305,6 +467,7 @@
             const mode = document.getElementById('mode').value;
             const duration = parseFloat(document.getElementById('duration').value);
             const recordBtn = document.getElementById('recordBtn');
+            const continueBtn = document.getElementById('continueBtn');
             
             // Reset UI
             document.getElementById('transcription').classList.remove('show');
@@ -318,28 +481,163 @@
             }
             nextStartTime = 0;
             
-            // Disable button
+            // Disable buttons
             recordBtn.disabled = true;
+            continueBtn.style.display = 'none';
             
             // Emit recording event
             socket.emit('start_recording', { mode: mode, duration: duration });
         }
 
+        function continueConversation() {
+            const mode = document.getElementById('mode').value;
+            const duration = parseFloat(document.getElementById('duration').value);
+            const recordBtn = document.getElementById('recordBtn');
+            const continueBtn = document.getElementById('continueBtn');
+            
+            // Move current exchange to history before starting new one
+            moveCurrentToHistory();
+            
+            // Clear current results for new exchange
+            document.getElementById('transcription').classList.remove('show');
+            document.getElementById('translation').classList.remove('show');
+            document.getElementById('audio-container').classList.remove('show');
+            document.getElementById('transcription-text').textContent = '';
+            document.getElementById('translation-text').textContent = '';
+            document.getElementById('audio-status').textContent = 'Preparing audio player...';
+            
+            // Reset audio
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            nextStartTime = 0;
+            
+            // Disable buttons
+            recordBtn.disabled = true;
+            continueBtn.disabled = true;
+            continueBtn.style.display = 'none';
+            
+            // Emit recording event
+            socket.emit('start_recording', { mode: mode, duration: duration });
+        }
+
+        function moveCurrentToHistory() {
+            const transcriptionText = document.getElementById('transcription-text').textContent;
+            const translationText = document.getElementById('translation-text').textContent;
+            
+            if (transcriptionText && translationText) {
+                addToHistoryDisplay(transcriptionText, translationText, currentAudioData);
+            }
+        }
+
+        let currentAudioData = null; // Store current audio for history
+
+        function addToHistoryDisplay(userText, assistantText, audioData) {
+            const historyContainer = document.getElementById('history-container');
+            const conversationHistory = document.getElementById('conversation-history');
+            
+            // Show history container
+            conversationHistory.style.display = 'block';
+            
+            // Create exchange container
+            const exchangeDiv = document.createElement('div');
+            exchangeDiv.className = 'history-exchange';
+            
+            // User message
+            const userDiv = document.createElement('div');
+            userDiv.className = 'history-item user';
+            userDiv.innerHTML = `
+                <div class="history-label">👤 You said:</div>
+                <div class="history-text">${userText}</div>
+            `;
+            
+            // Assistant response
+            const assistantDiv = document.createElement('div');
+            assistantDiv.className = 'history-item assistant';
+            assistantDiv.innerHTML = `
+                <div class="history-label">🤖 AI roasted:</div>
+                <div class="history-text">${assistantText}</div>
+            `;
+            
+            // Add audio player if available
+            if (audioData && audioData.length > 0) {
+                const audioDiv = document.createElement('div');
+                audioDiv.className = 'history-audio';
+                
+                // Convert PCM to WAV format
+                const wavBlob = createWavBlob(audioData, 24000); // 24kHz sample rate
+                const audioUrl = URL.createObjectURL(wavBlob);
+                
+                audioDiv.innerHTML = `
+                    <div class="history-label">🔊 Audio:</div>
+                    <audio controls>
+                        <source src="${audioUrl}" type="audio/wav">
+                        Your browser does not support the audio element.
+                    </audio>
+                `;
+                assistantDiv.appendChild(audioDiv);
+            }
+            
+            exchangeDiv.appendChild(userDiv);
+            exchangeDiv.appendChild(assistantDiv);
+            historyContainer.appendChild(exchangeDiv);
+            
+            // Scroll to bottom of history
+            conversationHistory.scrollTop = conversationHistory.scrollHeight;
+        }
+
+        function clearHistory() {
+            fetch('/clear_history', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        // Clear UI elements
+                        document.getElementById('roast-controls').style.display = 'none';
+                        document.getElementById('continueBtn').style.display = 'none';
+                        document.getElementById('conversation-history').style.display = 'none';
+                        document.getElementById('history-container').innerHTML = '';
+                        
+                        // Clear current audio data
+                        currentAudioData = null;
+                        audioChunksForHistory = [];
+                        
+                        // Update status
+                        document.getElementById('status').textContent = '🗑️ Conversation history cleared';
+                        document.getElementById('status').className = 'status success';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error clearing history:', error);
+                });
+        }
+
         // Socket event handlers
         socket.on('status', function(data) {
             const statusDiv = document.getElementById('status');
+            const recordBtn = document.getElementById('recordBtn');
+            const continueBtn = document.getElementById('continueBtn');
+            const mode = document.getElementById('mode').value;
+            
             statusDiv.className = 'status';
             
             if (data.step === 'recording') {
                 statusDiv.className = 'status recording';
                 statusDiv.innerHTML = '<div class="spinner"></div>' + data.message;
-            } else if (data.step.includes('complete')) {
-                statusDiv.className = 'status success';
-                statusDiv.textContent = '✅ ' + data.message;
             } else if (data.step === 'complete') {
                 statusDiv.className = 'status success';
                 statusDiv.textContent = '✅ ' + data.message;
-                document.getElementById('recordBtn').disabled = false;
+                recordBtn.disabled = false;
+                
+                // Show continue button only for roast mode
+                if (mode === 'roast') {
+                    continueBtn.style.display = 'block';
+                    continueBtn.disabled = false;
+                    document.getElementById('roast-controls').style.display = 'block';
+                }
+            } else if (data.step.includes('complete')) {
+                statusDiv.className = 'status success';
+                statusDiv.textContent = '✅ ' + data.message;
             } else {
                 statusDiv.className = 'status processing';
                 statusDiv.innerHTML = '<div class="spinner"></div>' + data.message;
@@ -356,6 +654,8 @@
             document.getElementById('translation').classList.add('show');
         });
 
+        let audioChunksForHistory = []; // Collect audio chunks for history
+
         socket.on('audio_chunk', function(data) {
             const audioContainer = document.getElementById('audio-container');
             audioContainer.classList.add('show');
@@ -364,10 +664,34 @@
             // Decode and play audio chunk immediately
             const pcmData = base64ToArrayBuffer(data.data);
             playAudioChunk(pcmData);
+            
+            // Collect chunks for history (only in roast mode)
+            const mode = document.getElementById('mode').value;
+            if (mode === 'roast') {
+                audioChunksForHistory.push(new Uint8Array(pcmData));
+            }
         });
 
         socket.on('audio_complete', function() {
             document.getElementById('audio-status').textContent = '✅ Audio playback complete!';
+            
+            // Store collected audio for history (roast mode only)
+            const mode = document.getElementById('mode').value;
+            if (mode === 'roast' && audioChunksForHistory.length > 0) {
+                // Combine all chunks into a single array
+                let totalLength = 0;
+                audioChunksForHistory.forEach(chunk => totalLength += chunk.length);
+                
+                const combinedAudio = new Uint8Array(totalLength);
+                let offset = 0;
+                audioChunksForHistory.forEach(chunk => {
+                    combinedAudio.set(chunk, offset);
+                    offset += chunk.length;
+                });
+                
+                currentAudioData = combinedAudio;
+                audioChunksForHistory = []; // Reset for next exchange
+            }
         });
 
         socket.on('laugh_track', function(data) {
