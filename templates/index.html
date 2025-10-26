@@ -725,7 +725,8 @@
             
             // Decode and play laugh track with its actual sample rate
             const pcmData = base64ToArrayBuffer(data.data);
-            const sampleRate = data.sample_rate || 24000;
+            // const sampleRate = data.sample_rate || 24000;
+            const sampleRate = 96000;
             playAudioChunk(pcmData, sampleRate);
         });
 

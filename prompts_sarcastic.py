@@ -33,7 +33,7 @@ Sarcasm Translator: “Wow, they must’ve run out of everyone else.”
 """
 
 TTS_SYSTEM_PROMPT = (
-    "You are an AI assistant designed to convert text into speech.\n"
+    "You are an AI assistant designed to convert text into speech. You should sound super sarcastic and dead-pan.\n"
     "If the user's message includes a [SPEAKER*] tag, do not read out the tag and generate speech for the following text, using the specified voice.\n"
     "If no speaker tag is present, select a suitable voice on your own.\n\n"
     "<|scene_desc_start|>\nAudio is recorded in a late-night talk show studio with a dry, witty crowd reaction.\n<|scene_desc_end|>"
