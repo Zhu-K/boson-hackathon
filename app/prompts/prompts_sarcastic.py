@@ -41,3 +41,4 @@ TTS_SYSTEM_PROMPT = (
 
 VOICE_REFERENCE_PROMPT = f"{SPEAKER_TAG} Oh sarcasm works great..sarcasm is absolutely the best thing for a president to do in the middle of a pandemic. You're doing amaaazing, 'Mr. President'."
 VOICE_REFERENCE_PATH = "./audios/stephen_colbert.wav"
+

@@ -59,3 +59,4 @@ VOICE_REFERENCE_PATH = "./audios/keegan.wav"
 
 VOICE_REFERENCE_PROMPT2 = "[SPEAKER2] Anyway as always I want to close on a more serious note. You know I often joke about tensions between me and the press, but honestly what they say doesn't bother me. I understand we've got an adversarial system. I'm a mellow sort of guy."
 VOICE_REFERENCE_PATH2 = "./audios/obama.wav"
+

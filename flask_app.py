@@ -3,35 +3,40 @@ from flask_socketio import SocketIO, emit
 import base64
 import os
 import wave
-import numpy as np
-import pyaudio
 from dotenv import load_dotenv
 from openai import OpenAI
 
 # Import roast conversation functions
-from roast_conversation import (
+from app.domain.conversation import (
     add_to_conversation_history,
     translate_emotion_with_history,
     clear_conversation_history,
     increment_recording_counter,
-    get_conversation_history_length
+    get_conversation_history_length,
 )
 
 # Import functions from streaming script
-from streaming_tts_script_with_listen_ars import (
+from app.services.openai_service import (
+    get_client,
     translate_emotion,
     transcribe_audio,
     tts_generate_streaming as streaming_tts_generate,
     load_mode_config,
     load_voice_config,
     VOICE_CONFIG,
-    LAUGH_TRACK_PATH
+    LAUGH_TRACK_PATH,
+)
+
+from app.services.audio import (
+    record_microphone_segment,
+    load_wav_file_as_pcm,
+    list_audio_devices as list_audio_devices_service,
 )
 
 # Load environment variables
 load_dotenv()
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder="app/templates")
 app.config['SECRET_KEY'] = 'higgs-audio-secret-key'
 socketio = SocketIO(app, cors_allowed_origins="*")
 
@@ -39,145 +44,8 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 client = None
 
 
-def get_client() -> OpenAI:
-    """Initialize OpenAI client with Boson API."""
-    api_key = os.getenv("BOSON_API_KEY")
-    if not api_key:
-        raise RuntimeError("BOSON_API_KEY environment variable not set")
-    return OpenAI(api_key=api_key, base_url="https://hackathon.boson.ai/v1")
-
-
 # Removed unused local helpers (b64 and TTS wrapper)
 
-
-def record_microphone_segment(
-    threshold: float = 500.0,
-    rate: int = 16_000,
-    chunk_size: int = 1024,
-    pre_seconds: float = 1.0,
-    post_seconds: float = 1.0,
-    silence_tolerance: float = 1.5,
-    max_duration: float = 30.0,
-    input_device_index: int = 0,
-    emit_callback=None
-) -> bytes:
-    """Record audio from the microphone with automatic voice activity detection.
-    
-    Args:
-        threshold: RMS amplitude threshold above which audio is considered speech
-        rate: Sample rate in Hz for recording
-        chunk_size: Number of samples to read per frame
-        pre_seconds: Seconds of audio to retain prior to the start of speech
-        post_seconds: Seconds of audio to capture after the end of speech
-        silence_tolerance: Maximum duration of consecutive silence before terminating
-        max_duration: Maximum recording duration in seconds (safety limit)
-        input_device_index: Audio input device index
-        emit_callback: Optional callback function to emit status updates
-    
-    Returns:
-        Raw 16-bit PCM audio including context before and after detected speech
-    """
-    from collections import deque
-    
-    p = pyaudio.PyAudio()
-    stream = p.open(
-        format=pyaudio.paInt16,
-        channels=1,
-        rate=rate,
-        input=True,
-        frames_per_buffer=chunk_size,
-        input_device_index=input_device_index,
-    )
-    
-    # Compute the number of frames that correspond to the pre/post buffers and silence tolerance
-    pre_max_chunks = int(pre_seconds * rate / chunk_size)
-    post_max_chunks = int(post_seconds * rate / chunk_size)
-    silence_max_chunks = int(silence_tolerance * rate / chunk_size)
-    max_chunks = int(max_duration * rate / chunk_size)
-    
-    pre_buffer: deque = deque(maxlen=pre_max_chunks)
-    frames: list[bytes] = []
-    recording = False
-    silent_chunks = 0
-    total_chunks = 0
-    
-    try:
-        if emit_callback:
-            emit_callback('status', {'step': 'listening', 'message': '👂 Listening... Start speaking!'})
-        
-        while True:
-            data = stream.read(chunk_size)
-            total_chunks += 1
-            
-            # Safety limit: stop after max_duration
-            if total_chunks >= max_chunks:
-                if emit_callback:
-                    emit_callback('status', {'step': 'max_duration', 'message': '⏱️ Maximum duration reached'})
-                break
-            
-            # Maintain a rolling buffer for pre-speech audio
-            pre_buffer.append(data)
-            
-            # Compute RMS amplitude
-            audio_np = np.frombuffer(data, dtype=np.int16)
-            rms = np.sqrt(np.mean(audio_np.astype(np.float64) ** 2))
-            
-            if recording:
-                frames.append(data)
-                
-                # Check for silence
-                if rms < threshold:
-                    silent_chunks += 1
-                else:
-                    silent_chunks = 0
-                
-                # If we've seen too much silence, capture trailing audio and stop
-                if silent_chunks >= silence_max_chunks:
-                    if emit_callback:
-                        emit_callback('status', {'step': 'silence_detected', 'message': '🤫 Silence detected, stopping...'})
-                    
-                    # Capture post_seconds of additional audio
-                    for _ in range(post_max_chunks):
-                        trailing = stream.read(chunk_size)
-                        frames.append(trailing)
-                    break
-            else:
-                # Wait for speech start
-                if rms >= threshold:
-                    recording = True
-                    if emit_callback:
-                        emit_callback('status', {'step': 'speech_detected', 'message': '🎤 Speech detected, recording...'})
-                    
-                    # Include the pre-speech buffer in the output
-                    frames.extend(list(pre_buffer))
-                    frames.append(data)
-    finally:
-        stream.stop_stream()
-        stream.close()
-        p.terminate()
-    
-    return b"".join(frames)
-
-
-def load_wav_file_as_pcm(path: str, target_rate: int = 24_000, volume: float = 0.25) -> tuple[bytes, int]:
-    """Load a WAV file and convert it to PCM format with volume adjustment.
-    Returns (pcm_bytes, sample_rate)."""
-    if not os.path.exists(path):
-        return b"", target_rate
-    
-    with wave.open(path, "rb") as wf:
-        # Get the actual sample rate from the file
-        sample_rate = wf.getframerate()
-        print("Sample rate: ", sample_rate)
-        
-        # Read all frames
-        frames = wf.readframes(wf.getnframes())
-        audio_array = np.frombuffer(frames, dtype=np.int16)
-        
-        # Apply volume scaling
-        scaled = np.clip(audio_array * volume, -32768, 32767).astype(np.int16)
-        
-        return scaled.tobytes(), sample_rate
         
 @app.route('/')
 def index():
@@ -195,7 +63,6 @@ def clear_history():
 @app.route('/history_status', methods=['GET'])
 def history_status():
     """Get conversation history status."""
-    from roast_conversation import get_conversation_history_length
     history_length = get_conversation_history_length()
     return jsonify({
         'has_history': history_length > 0,
@@ -205,31 +72,11 @@ def history_status():
 
 @app.route('/devices', methods=['GET'])
 def list_audio_devices():
-    """Return available input audio devices and the default device index."""
-    devices = []
-    default_index = None
+    """Return available input audio devices and default index via service."""
     try:
-        p = pyaudio.PyAudio()
-        try:
-            default_index = p.get_default_input_device_info().get('index')
-        except Exception:
-            default_index = None
-        for i in range(p.get_device_count()):
-            info = p.get_device_info_by_index(i)
-            if info.get('maxInputChannels', 0) > 0:
-                devices.append({
-                    'index': i,
-                    'name': info.get('name', f'Device {i}'),
-                    'channels': info.get('maxInputChannels', 0)
-                })
+        return jsonify(list_audio_devices_service())
     except Exception as e:
-        return jsonify({'devices': [], 'default_index': default_index, 'error': str(e)}), 200
-    finally:
-        try:
-            p.terminate()
-        except Exception:
-            pass
-    return jsonify({'devices': devices, 'default_index': default_index})
+        return jsonify({'devices': [], 'default_index': None, 'error': str(e)})
 
 
 @socketio.on('start_recording')
@@ -342,7 +189,7 @@ def handle_recording(data):
             # Use streaming TTS with prompt saving
             stream_iter = streaming_tts_generate(
                 client, emotional_text, TTS_SYSTEM_PROMPT, 
-                voice_reference, save_prompt=True
+                voice_reference
             )
             
             # Clean up temporary file if created
