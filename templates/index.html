@@ -311,8 +311,10 @@
                 <select id="mode">
                     <option value="angry">Angry</option>
                     <option value="sarcastic">Sarcastic</option>
-                    <option value="roast">Interactive Roast</option>
+                    <option value="roast">Roast</option>
+                    <option value="conversation">Conversation</option>
                 </select>
+                <div id="mode-description" style="margin-top: 6px; color: #666; font-size: 0.9em;"></div>
             </div>
 
             <div class="control-group">
@@ -321,6 +323,7 @@
                     <option value="keegan">Keegan-Michael Key</option>
                     <option value="stephen">Stephen Colbert</option>
                     <option value="ricky">Ricky Gervais</option>
+                    <option value="obama">Barack Obama</option>
                     <option value="my_voice">🎙️ My Voice (Clone)</option>
                 </select>
             </div>
@@ -330,6 +333,12 @@
                 <select id="language">
                     <option value="english">English</option>
                     <option value="mandarin">Mandarin</option>
+                    <option value="french">French</option>
+                    <option value="german">German</option>
+                    <option value="spanish">Spanish</option>
+                    <option value="italian">Italian</option>
+                    <option value="japanese">Japanese</option>
+                    <option value="korean">Korean</option>
                 </select>
             </div>
 
@@ -349,8 +358,8 @@
             <div style="margin-top: 15px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
                 <div class="control-group">
                     <label for="silenceTolerance">Silence Timeout</label>
-                    <input type="range" id="silenceTolerance" min="1" max="5" step="0.5" value="2">
-                    <div class="slider-value"><span id="silenceTolerance-value">2.0</span>s</div>
+                    <input type="range" id="silenceTolerance" min="1" max="5" step="0.5" value="1">
+                    <div class="slider-value"><span id="silenceTolerance-value">1.0</span>s</div>
                 </div>
                 <div class="control-group">
                     <label for="maxDuration">Max Duration</label>
@@ -379,21 +388,17 @@
 
         <div id="status" class="status"></div>
 
-        <!-- Conversation History for Interactive Roast Mode -->
-        <div id="conversation-history" style="display: none;">
-            <div class="result-label">💬 Conversation History:</div>
-            <div id="history-container"></div>
-        </div>
+        <!-- Conversation history UI removed for Conversation mode to keep UI consistent -->
 
         <!-- Current Exchange -->
         <div id="current-exchange">
             <div id="transcription" class="result-box">
-                <div class="result-label">📝 Original Transcription:</div>
+                <div class="result-label">🗣️ You said:</div>
                 <div id="transcription-text" class="result-text"></div>
             </div>
 
             <div id="translation" class="result-box">
-                <div class="result-label">🎭 Emotional Translation:</div>
+                <div class="result-label" id="translation-label">🤖 AI Response:</div>
                 <div id="translation-text" class="result-text"></div>
             </div>
 
@@ -427,20 +432,24 @@
         // Check conversation history status
         function checkHistoryStatus() {
             const mode = document.getElementById('mode').value;
-            if (mode === 'roast') {
+            if (mode === 'conversation') {
                 fetch('/history_status')
                     .then(response => response.json())
                     .then(data => {
                         const roastControls = document.getElementById('roast-controls');
                         const continueBtn = document.getElementById('continueBtn');
+                        const recordBtn = document.getElementById('recordBtn');
                         
                         if (data.has_history) {
                             roastControls.style.display = 'block';
                             continueBtn.style.display = 'block';
                             continueBtn.disabled = false;
+                            // Hide start recording when history exists
+                            if (recordBtn) recordBtn.style.display = 'none';
                         } else {
                             roastControls.style.display = 'none';
                             continueBtn.style.display = 'none';
+                            if (recordBtn) recordBtn.style.display = 'inline-block';
                         }
                     })
                     .catch(error => {
@@ -453,7 +462,8 @@
         const modeVoiceDefaults = {
             'angry': 'keegan',
             'sarcastic': 'stephen',
-            'roast': 'ricky'
+            'roast': 'ricky',
+            'conversation': 'obama'
         };
 
         // Handle mode changes
@@ -461,6 +471,7 @@
             const roastControls = document.getElementById('roast-controls');
             const continueBtn = document.getElementById('continueBtn');
             const voiceSelect = document.getElementById('voice');
+            const recordBtn = document.getElementById('recordBtn');
             
             // Set default voice for the selected mode
             const defaultVoice = modeVoiceDefaults[this.value];
@@ -468,13 +479,16 @@
                 voiceSelect.value = defaultVoice;
             }
             
-            if (this.value === 'roast') {
+            if (this.value === 'conversation') {
                 checkHistoryStatus();
             } else {
                 // Hide roast-specific controls for other modes
                 roastControls.style.display = 'none';
                 continueBtn.style.display = 'none';
+                if (recordBtn) recordBtn.style.display = 'inline-block';
             }
+            // Update mode description
+            updateModeDescription(this.value);
         });
 
         // Check history status on page load and set initial voice
@@ -487,7 +501,40 @@
             }
             
             checkHistoryStatus();
+            updateModeDescription(initialMode);
         });
+
+        // Mode descriptions
+        const MODE_DESCRIPTIONS = {
+            angry: 'Rephrases as a fiery, punchy rant — short and spicy.',
+            sarcastic: 'Dry, witty, deadpan replies with eyebrow permanently raised.',
+            roast: 'Sharp, cutting roast lines delivered like a pro comedian.',
+            conversation: 'Friendly, quick‑witted banter that builds over multiple turns.'
+        };
+
+        function updateModeDescription(mode) {
+            const el = document.getElementById('mode-description');
+            if (!el) return;
+            el.textContent = MODE_DESCRIPTIONS[mode] || '';
+        }
+
+        // Fun, rotating translation label names
+        const RESPONSE_LABELS = [
+            'Totally reasonable response:',
+            'Questionably funny sidekick:',
+            "AI's best guess at comedy:",
+            'Your unsolicited punchline:',
+            'Dubiously wisecracking reply:',
+            'Certified giggle attempt:',
+            'Hypothetically humorous output:',
+            'Tastefully chaotic comeback:',
+            'Mildly helpful banter:',
+            'Jest-in-time response:'
+        ];
+
+        function randomResponseLabel() {
+            return RESPONSE_LABELS[Math.floor(Math.random() * RESPONSE_LABELS.length)];
+        }
 
         // Initialize Web Audio API
         function initAudioContext() {
@@ -585,12 +632,15 @@
             const maxDuration = parseFloat(document.getElementById('maxDuration').value);
             const recordBtn = document.getElementById('recordBtn');
             const continueBtn = document.getElementById('continueBtn');
-            
+
             // Reset UI
             document.getElementById('transcription').classList.remove('show');
             document.getElementById('translation').classList.remove('show');
             document.getElementById('audio-container').classList.remove('show');
             document.getElementById('saveAudioBtn').style.display = 'none';
+            // Set a fresh, fun translation label each turn
+            const tLabel = document.getElementById('translation-label');
+            if (tLabel) tLabel.textContent = '🎭 ' + randomResponseLabel();
             
             // Reset audio
             if (audioContext) {
@@ -625,8 +675,7 @@
             const recordBtn = document.getElementById('recordBtn');
             const continueBtn = document.getElementById('continueBtn');
             
-            // Move current exchange to history before starting new one
-            moveCurrentToHistory();
+            // No visible conversation history in UI; no-op
             
             // Clear current results for new exchange
             document.getElementById('transcription').classList.remove('show');
@@ -635,6 +684,8 @@
             document.getElementById('transcription-text').textContent = '';
             document.getElementById('translation-text').textContent = '';
             document.getElementById('audio-status').textContent = 'Preparing audio player...';
+            const tLabel = document.getElementById('translation-label');
+            if (tLabel) tLabel.textContent = '🎭 ' + randomResponseLabel();
             
             // Reset audio
             if (audioContext) {
@@ -659,70 +710,10 @@
             });
         }
 
-        function moveCurrentToHistory() {
-            const transcriptionText = document.getElementById('transcription-text').textContent;
-            const translationText = document.getElementById('translation-text').textContent;
-            
-            if (transcriptionText && translationText) {
-                addToHistoryDisplay(transcriptionText, translationText, currentAudioData);
-            }
-        }
-
-        let currentAudioData = null; // Store current audio for history
-
-        function addToHistoryDisplay(userText, assistantText, audioData) {
-            const historyContainer = document.getElementById('history-container');
-            const conversationHistory = document.getElementById('conversation-history');
-            
-            // Show history container
-            conversationHistory.style.display = 'block';
-            
-            // Create exchange container
-            const exchangeDiv = document.createElement('div');
-            exchangeDiv.className = 'history-exchange';
-            
-            // User message
-            const userDiv = document.createElement('div');
-            userDiv.className = 'history-item user';
-            userDiv.innerHTML = `
-                <div class="history-label">👤 You said:</div>
-                <div class="history-text">${userText}</div>
-            `;
-            
-            // Assistant response
-            const assistantDiv = document.createElement('div');
-            assistantDiv.className = 'history-item assistant';
-            assistantDiv.innerHTML = `
-                <div class="history-label">🤖 AI roasted:</div>
-                <div class="history-text">${assistantText}</div>
-            `;
-            
-            // Add audio player if available
-            if (audioData && audioData.length > 0) {
-                const audioDiv = document.createElement('div');
-                audioDiv.className = 'history-audio';
-                
-                // Convert PCM to WAV format
-                const wavBlob = createWavBlob(audioData, 24000); // 24kHz sample rate
-                const audioUrl = URL.createObjectURL(wavBlob);
-                
-                audioDiv.innerHTML = `
-                    <div class="history-label">🔊 Audio:</div>
-                    <audio controls>
-                        <source src="${audioUrl}" type="audio/wav">
-                        Your browser does not support the audio element.
-                    </audio>
-                `;
-                assistantDiv.appendChild(audioDiv);
-            }
-            
-            exchangeDiv.appendChild(userDiv);
-            exchangeDiv.appendChild(assistantDiv);
-            historyContainer.appendChild(exchangeDiv);
-            
-            // Scroll to bottom of history
-            conversationHistory.scrollTop = conversationHistory.scrollHeight;
-        }
+        // Conversation history UI removed; keep stubs for potential future use
+        function moveCurrentToHistory() {}
+        let currentAudioData = null; // retained for potential logging
+        function addToHistoryDisplay(userText, assistantText, audioData) {}
 
         function saveAudio() {
             if (audioChunksForSave.length === 0) {
@@ -810,11 +801,13 @@
                 statusDiv.textContent = '✅ ' + data.message;
                 recordBtn.disabled = false;
                 
-                // Show continue button only for roast mode
-                if (mode === 'roast') {
+                // Show controls only for conversation mode
+                if (mode === 'conversation') {
                     continueBtn.style.display = 'block';
                     continueBtn.disabled = false;
                     document.getElementById('roast-controls').style.display = 'block';
+                    // Hide or show record button based on history presence
+                    checkHistoryStatus();
                 }
             } else if (data.step.includes('complete')) {
                 statusDiv.className = 'status success';
@@ -850,9 +843,9 @@
             // Collect chunks for saving (all modes)
             audioChunksForSave.push(new Uint8Array(pcmData));
             
-            // Collect chunks for history (only in roast mode)
+            // Collect chunks for history (only in conversation mode)
             const mode = document.getElementById('mode').value;
-            if (mode === 'roast') {
+            if (mode === 'conversation') {
                 audioChunksForHistory.push(new Uint8Array(pcmData));
             }
         });
@@ -865,9 +858,9 @@
                 document.getElementById('saveAudioBtn').style.display = 'block';
             }
             
-            // Store collected audio for history (roast mode only)
+            // Store collected audio for history (conversation mode only)
             const mode = document.getElementById('mode').value;
-            if (mode === 'roast' && audioChunksForHistory.length > 0) {
+            if (mode === 'conversation' && audioChunksForHistory.length > 0) {
                 // Combine all chunks into a single array
                 let totalLength = 0;
                 audioChunksForHistory.forEach(chunk => totalLength += chunk.length);

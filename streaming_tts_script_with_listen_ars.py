@@ -20,10 +20,7 @@ from roast_conversation import (
     clear_conversation_history,
     get_conversation_history_length,
     increment_recording_counter,
-    save_audio_to_history,
-    save_combined_conversation_audio,
-    translate_emotion_with_history,
-    _save_prompt_context
+    translate_emotion_with_history
 )
 
 # Load environment variables
@@ -105,7 +102,7 @@ def transcribe_audio(client: OpenAI, audio_bytes: bytes) -> str:
     response = client.chat.completions.create(
         model="higgs-audio-understanding-Hackathon",
         messages=[
-            {"role": "system", "content": "Transcribe this audio for me."},
+            {"role": "system", "content": "Transcribe this audio for me. Include only the spoken text, nothing else."},
             {
                 "role": "user",
                 "content": [
@@ -142,9 +139,7 @@ def tts_generate_streaming(client: OpenAI, text: str, tts_prompt: str, voice_ref
         {"role": "user", "content": f"{SPEAKER_TAG} {text}"},
     ]
     
-    # Save prompt context if requested (for roast mode)
-    if save_prompt:
-        _save_prompt_context(messages, text, "tts")
+    # Prompt logging removed
     
     return client.chat.completions.create(
         model="higgs-audio-generation-Hackathon",
@@ -276,8 +271,12 @@ MODE_CONFIG = {
         "description": "Sarcastic"
     },
     "roast": {
-        "module": "prompts_heckle",
-        "description": "Interactive Roast"
+        "module": "prompts_roast",
+        "description": "Roast (single-turn)"
+    },
+    "conversation": {
+        "module": "prompts_conversation",
+        "description": "Conversational Comedy (multi-turn)"
     }
 }
 
@@ -297,6 +296,11 @@ VOICE_CONFIG = {
         "reference_path": "./audios/ricky_gervaise.wav",
         "reference_prompt": f"{SPEAKER_TAG} All the best actors have jumped to Netflix and HBO, you know, and the actors who just do hollywood movies now do fantasy adventure nonsense..they wear masks and capes and reaaally tight costumes. Their job isn't acting anymore! It's going to the gym twice a day and taking steroids really.",
         "description": "Ricky Gervais (brutally honest)"
+    },
+    "obama": {
+        "reference_path": "./audios/obama.wav",
+        "reference_prompt": "{SPEAKER_TAG} Anyway as always I want to close on a more serious note. You know I often joke about tensions between me and the press, but honestly what they say doesn't bother me. I understand we've got an adversarial system. I'm a mellow sort of guy.",
+        "description": "Barack Obama (calm, measured)"
     },
     "my_voice": {
         "reference_path": None,  # Will be set dynamically from recorded audio
@@ -330,7 +334,9 @@ def load_mode_config(mode: str) -> tuple:
         elif mode.lower() == "sarcastic":
             from prompts.prompts_sarcastic import TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT, LANGUAGE_TEMPLATE
         elif mode.lower() == "roast":
-            from prompts.prompts_heckle import TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT, LANGUAGE_TEMPLATE
+            from prompts.prompts_roast import TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT, LANGUAGE_TEMPLATE
+        elif mode.lower() == "conversation":
+            from prompts.prompts_conversation import TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT, LANGUAGE_TEMPLATE
         
         return (
             TRANSLATOR_SYSTEM_PROMPT,
@@ -422,9 +428,9 @@ def main():
 
     client = get_client()
 
-    # Handle roast mode conversation history
-    is_roast_mode = args.mode == "roast"
-    if is_roast_mode:
+    # Handle conversation mode conversation history
+    is_conversation_mode = args.mode == "conversation"
+    if is_conversation_mode:
         if args.clear_history:
             clear_conversation_history()
             print("🗑️ Conversation history cleared")
@@ -440,8 +446,8 @@ def main():
     print(f"🌐 Language: {args.language.capitalize()}")
     if args.duration:
         print(f"🎧 Fixed recording duration: {args.duration} seconds")
-    if is_roast_mode:
-        print("💬 Interactive Roast mode: Conversation history enabled")
+    if is_conversation_mode:
+        print("💬 Conversation mode: multi-turn history enabled")
     print("🎵 Listening for speech...")
     print()
 
@@ -471,7 +477,7 @@ def main():
         print(f"⚠️  Warning: Laugh track file not found: {LAUGH_TRACK_PATH}")
 
     # Step 3: Translate
-    if is_roast_mode:
+    if is_conversation_mode:
         # Increment counter for roast mode
         increment_recording_counter()
         # Use conversation-aware translation
@@ -483,8 +489,8 @@ def main():
     print(f"Rephrased text: {emotional_text}\nGenerating speech...")
 
     # Step 4: TTS
-    if is_roast_mode:
-        print("Using interactive roast mode")
+    if is_conversation_mode:
+        print("Using conversational comedy mode")
         # Use roast TTS with prompt saving
         ref_path = VOICE_CONFIG[args.voice]["reference_path"]
         if ref_path is None:  # Handle my_voice case
@@ -501,8 +507,8 @@ def main():
             client, emotional_text, TTS_SYSTEM_PROMPT, 
             voice_reference, save_prompt=True
         )
-        # Collect audio for history and combined file
-        assistant_audio = play_streaming_audio(stream_iter, collect_audio=True)
+        # Play streaming audio (no server-side saving)
+        play_streaming_audio(stream_iter, collect_audio=False)
         
         # Clean up temporary file if created
         if ref_path == "temp_voice_reference.wav" and os.path.exists(ref_path):
@@ -515,32 +521,13 @@ def main():
     # Step 5: Add laugh track
     play_wav_file(LAUGH_TRACK_PATH, volume=0.25)
 
-    # Step 6: Save conversation history and combined audio (roast mode only)
-    if is_roast_mode:
+    # Step 6: Save conversation history (text only)
+    if is_conversation_mode:
         try:
-            # Save user input to history
-            user_audio_path = save_audio_to_history(audio_bytes, captured_speech, is_user=True)
-            add_to_conversation_history(captured_speech, user_audio_path, is_user=True)
-            
-            # Save assistant response to history
-            if assistant_audio:
-                assistant_audio_path = save_audio_to_history(assistant_audio, emotional_text, is_user=False)
-                add_to_conversation_history(emotional_text, assistant_audio_path, is_user=False)
-                
-                # Save combined conversation audio
-                # Load laugh track for combining
-                laugh_pcm = None
-                if os.path.exists(LAUGH_TRACK_PATH):
-                    with wave.open(LAUGH_TRACK_PATH, 'rb') as wf:
-                        laugh_frames = wf.readframes(wf.getnframes())
-                        laugh_pcm = np.frombuffer(laugh_frames, dtype=np.int16).tobytes()
-                
-                combined_path = save_combined_conversation_audio(audio_bytes, assistant_audio, laugh_pcm)
-                print(f"💾 Combined audio saved: {combined_path}")
-                print(f"📁 Prompts saved: qwen_prompts/ and tts_prompts/")
-                
+            add_to_conversation_history(captured_speech, is_user=True)
+            add_to_conversation_history(emotional_text, is_user=False)
         except Exception as e:
-            print(f"⚠️ Error saving conversation history: {e}")
+            print(f"⚠️ Error updating conversation history: {e}")
 
     print("✅ Done.")
 

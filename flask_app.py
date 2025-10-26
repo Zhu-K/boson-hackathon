@@ -14,11 +14,9 @@ import threading
 
 # Import roast conversation functions
 from roast_conversation import (
-    save_audio_to_history,
     add_to_conversation_history,
     translate_emotion_with_history,
     clear_conversation_history,
-    save_combined_conversation_audio,
     increment_recording_counter,
     get_conversation_history_length
 )
@@ -73,7 +71,7 @@ def record_microphone_segment(
     chunk_size: int = 1024,
     pre_seconds: float = 1.0,
     post_seconds: float = 1.0,
-    silence_tolerance: float = 2.0,
+    silence_tolerance: float = 1.5,
     max_duration: float = 30.0,
     input_device_index: int = 0,
     emit_callback=None
@@ -255,9 +253,9 @@ def handle_recording(data):
         if client is None:
             client = get_client()
 
-        # Handle roast mode conversation history - NEW: From streaming script
-        is_roast_mode = mode == "roast"
-        if is_roast_mode:
+        # Handle conversation mode (multi-turn) history
+        is_conversation_mode = mode == "conversation"
+        if is_conversation_mode:
             increment_recording_counter()
             history_length = get_conversation_history_length()
             print(f"💬 Found {history_length} previous messages in conversation history")
@@ -298,8 +296,8 @@ def handle_recording(data):
         # Step 3: Translate
         emit('status', {'step': 'translating', 'message': f'Translating to {mode} mode...'})
         
-        # Use conversation-aware translation for roast mode
-        if is_roast_mode:
+        # Use conversation-aware translation for conversation mode
+        if is_conversation_mode:
             emotional_text = translate_emotion_with_history(client, captured_speech, llm_system_prompt)
         else:
             emotional_text = translate_emotion(client, captured_speech, llm_system_prompt)
@@ -311,10 +309,9 @@ def handle_recording(data):
         emit('status', {'step': 'generating_audio', 'message': 'Generating emotional speech...'})
         
         # NEW: Enhanced TTS logic from streaming script
-        assistant_audio_chunks = []
         
-        if is_roast_mode:
-            print("Using interactive roast mode")
+        if is_conversation_mode:
+            print("Using conversational comedy mode (multi-turn)")
             # Handle voice cloning for my_voice - NEW: From streaming script
             ref_path = VOICE_CONFIG[voice]["reference_path"]
             if ref_path is None:  # Handle my_voice case
@@ -354,9 +351,7 @@ def handle_recording(data):
             # Send audio chunk to client
             emit('audio_chunk', {'data': b64_data})
             
-            # Collect chunks for roast mode history
-            if is_roast_mode:
-                assistant_audio_chunks.append(base64.b64decode(b64_data))
+            # No server-side audio saving required
         
         # Clean up temporary voice reference file
         if temp_ref_created and os.path.exists("temp_voice_reference.wav"):
@@ -364,22 +359,13 @@ def handle_recording(data):
         
         emit('audio_complete', {})
         
-        # Save conversation to history for roast mode - ENHANCED: From streaming script
-        if is_roast_mode:
+        # Save conversation to text-only history (no audio files)
+        if is_conversation_mode:
             try:
-                # Save user input to history
-                user_audio_path = save_audio_to_history(audio_bytes, captured_speech, is_user=True)
-                add_to_conversation_history(captured_speech, user_audio_path, is_user=True)
-                
-                # Save assistant response to history
-                if assistant_audio_chunks:
-                    assistant_pcm = b"".join(assistant_audio_chunks)
-                    assistant_audio_path = save_audio_to_history(assistant_pcm, emotional_text, is_user=False)
-                    add_to_conversation_history(emotional_text, assistant_audio_path, is_user=False)
+                add_to_conversation_history(captured_speech, is_user=True)
+                add_to_conversation_history(emotional_text, is_user=False)
             except Exception as e:
-                print(f"ERROR: Failed to save conversation to history: {e}")
-                import traceback
-                traceback.print_exc()
+                print(f"ERROR: Failed to update conversation history: {e}")
         
         # Step 5: Send laugh track (only if enabled)
         if laugh_track_enabled:
@@ -390,28 +376,7 @@ def handle_recording(data):
                 laugh_b64 = base64.b64encode(laugh_pcm).decode('utf-8')
                 emit('laugh_track', {'data': laugh_b64, 'sample_rate': laugh_rate})
         
-        # Step 6: Save combined audio for roast mode - ENHANCED: From streaming script
-        if is_roast_mode:
-            try:
-                emit('status', {'step': 'saving_combined', 'message': 'Saving combined audio...'})
-                assistant_pcm = b"".join(assistant_audio_chunks) if assistant_audio_chunks else b""
-                
-                # Load laugh track for combining - NEW: From streaming script
-                laugh_pcm_for_combining = None
-                if os.path.exists(LAUGH_TRACK_PATH):
-                    with wave.open(LAUGH_TRACK_PATH, 'rb') as wf:
-                        laugh_frames = wf.readframes(wf.getnframes())
-                        laugh_pcm_for_combining = np.frombuffer(laugh_frames, dtype=np.int16).tobytes()
-                
-                combined_path = save_combined_conversation_audio(
-                    audio_bytes, assistant_pcm, laugh_pcm_for_combining
-                )
-                print(f"💾 Combined audio saved: {combined_path}")
-                print(f"📁 Prompts saved: qwen_prompts/ and tts_prompts/")
-            except Exception as e:
-                print(f"ERROR: Failed to save combined audio: {e}")
-                import traceback
-                traceback.print_exc()
+        # No server-side combined audio saving
         
         emit('status', {'step': 'complete', 'message': 'All done!'})
 
