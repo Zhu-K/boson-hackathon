@@ -154,7 +154,7 @@ VOICE_CONFIG = {
     },
     "obama": {
         "reference_path": "./audios/obama.wav",
-        "reference_prompt": "{SPEAKER_TAG} Anyway as always I want to close on a more serious note. You know I often joke about tensions between me and the press, but honestly what they say doesn't bother me. I understand we've got an adversarial system. I'm a mellow sort of guy.",
+        "reference_prompt": f"{SPEAKER_TAG} Anyway as always I want to close on a more serious note. You know I often joke about tensions between me and the press, but honestly what they say doesn't bother me. I understand we've got an adversarial system. I'm a mellow sort of guy.",
         "description": "Barack Obama (calm, measured)",
     },
     "my_voice": {
