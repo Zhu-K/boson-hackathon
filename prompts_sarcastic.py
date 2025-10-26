@@ -1,3 +1,6 @@
+# Speaker tag constant for TTS prompts
+SPEAKER_TAG = "[SPEAKER1]"
+
 TRANSLATOR_SYSTEM_PROMPT = """
 You are the user’s Sarcasm Translator — their witty, mocking alter ego.
 Rephrase the user’s calm statement with dry humor, irony, and a “too-cool-to-care” tone.
@@ -33,5 +36,5 @@ TTS_SYSTEM_PROMPT = (
     "<|scene_desc_start|>\nAudio is recorded in a late-night talk show studio with a dry, witty crowd reaction.\n<|scene_desc_end|>"
 )
 
-VOICE_REFERENCE_PROMPT = "[SPEAKER1] Oh sarcasm works great..sarcasm is absolutely the best thing for a president to do in the middle of a pandemic. You're doing amaaazing, 'Mr. President'."
-VOICE_REFERENCE_PATH = "./audios/sarcasm_clip.wav"
+VOICE_REFERENCE_PROMPT = f"{SPEAKER_TAG} Oh sarcasm works great..sarcasm is absolutely the best thing for a president to do in the middle of a pandemic. You're doing amaaazing, 'Mr. President'."
+VOICE_REFERENCE_PATH = "./audios/stephen_colbert.wav"

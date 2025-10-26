@@ -47,7 +47,7 @@
 
         .controls {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1fr 1fr 1fr;
             gap: 20px;
             margin-bottom: 30px;
         }
@@ -208,6 +208,17 @@
                 <select id="mode">
                     <option value="angry">Angry</option>
                     <option value="sarcastic">Sarcastic</option>
+                    <option value="roast">Roast</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="voice">🎤 Voice</label>
+                <select id="voice">
+                    <option value="keegan">Keegan-Michael Key</option>
+                    <option value="stephen">Stephen Colbert</option>
+                    <option value="ricky">Ricky Gervais</option>
+                    <option value="my_voice">🎙️ My Voice (Clone)</option>
                 </select>
             </div>
 
@@ -303,6 +314,7 @@
 
         function startRecording() {
             const mode = document.getElementById('mode').value;
+            const voice = document.getElementById('voice').value;
             const duration = parseFloat(document.getElementById('duration').value);
             const recordBtn = document.getElementById('recordBtn');
             
@@ -322,7 +334,7 @@
             recordBtn.disabled = true;
             
             // Emit recording event
-            socket.emit('start_recording', { mode: mode, duration: duration });
+            socket.emit('start_recording', { mode: mode, voice: voice, duration: duration });
         }
 
         // Socket event handlers

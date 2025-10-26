@@ -16,6 +16,38 @@ import numpy as np
 # Load environment variables
 load_dotenv()
 
+# Speaker tag constant for TTS prompts
+SPEAKER_TAG = "[SPEAKER1]"
+
+
+class VoiceReference:
+    """Handle voice reference audio for TTS, supporting both file paths and raw audio bytes."""
+    
+    def __init__(self, audio: str | bytes, text: str) -> None:
+        """
+        Initialize voice reference.
+        
+        Args:
+            audio: Either a file path (str) or raw audio bytes
+            text: The reference text/prompt for this voice
+        """
+        if isinstance(audio, str):
+            # File path - read and encode
+            self.voice_audio = b64(audio)
+        else:
+            # Raw bytes - convert to WAV format first
+            with io.BytesIO() as buffer:
+                with wave.open(buffer, "wb") as wf:
+                    wf.setnchannels(1)  # Mono
+                    wf.setsampwidth(2)  # 16-bit samples
+                    wf.setframerate(16_000)  # Must match record_microphone_segment()
+                    wf.writeframes(audio)
+                wav_data = buffer.getvalue()
+            # Base64-encode the WAV for transmission
+            self.voice_audio = base64.b64encode(wav_data).decode("utf-8")
+        
+        self.text = text
+
 
 def b64(path: str) -> str:
     with open(path, "rb") as fh:
@@ -73,20 +105,27 @@ def transcribe_audio(client: OpenAI, audio_bytes: bytes) -> str:
     return response.choices[0].message.content
 
 
-def tts_generate_streaming(client: OpenAI, text: str, tts_prompt: str, voice_prompt: str, ref_path: str) -> Iterator:
-    """Generate TTS for the given text using Higgs Audio."""
+def tts_generate_streaming(client: OpenAI, text: str, tts_prompt: str, voice_ref: VoiceReference) -> Iterator:
+    """Generate TTS for the given text using Higgs Audio.
+    
+    Args:
+        client: OpenAI client
+        text: Text to convert to speech
+        tts_prompt: System prompt for TTS
+        voice_ref: VoiceReference object containing audio and text
+    """
     return client.chat.completions.create(
         model="higgs-audio-generation-Hackathon",
         messages=[
             {"role": "system", "content": tts_prompt},
-            {"role": "user", "content": voice_prompt},
+            {"role": "user", "content": voice_ref.text},
             {
                 "role": "assistant",
                 "content": [
-                    {"type": "input_audio", "input_audio": {"data": b64(ref_path), "format": "wav"}},
+                    {"type": "input_audio", "input_audio": {"data": voice_ref.voice_audio, "format": "wav"}},
                 ],
             },
-            {"role": "user", "content": f"[SPEAKER1] {text}"},
+            {"role": "user", "content": f"{SPEAKER_TAG} {text}"},
         ],
         modalities=["text", "audio"],
         max_completion_tokens=4096,
@@ -111,7 +150,7 @@ def record_microphone_segment(threshold: float = 1500.0, rate: int = 16_000,
         channels=1,
         rate=rate,
         input=True,
-        input_device_index=0,
+        input_device_index=1,
         frames_per_buffer=chunk_size,
     )
 
@@ -195,47 +234,179 @@ def play_wav_file(path: str, volume: float = 1.0) -> None:
         p.terminate()
 
 
+# Mode configuration mapping (for emotion/text translation)
+MODE_CONFIG = {
+    "angry": {
+        "module": "prompts",
+        "description": "Angry"
+    },
+    "sarcastic": {
+        "module": "prompts_sarcastic",
+        "description": "Sarcastic"
+    },
+    "roast": {
+        "module": "prompts_roast",
+        "description": "Roast"
+    }
+}
+
+# Voice configuration mapping (for TTS voice characteristics)
+VOICE_CONFIG = {
+    "keegan": {
+        "reference_path": "./audios/keegan.wav",
+        "reference_prompt": f"{SPEAKER_TAG} Oh and CNN, thank you so much for the wall to wall ebola coverage. For two whole weeks, we were one step away from the walking dead!",
+        "description": "Keegan-Michael Key (energetic, comedic)"
+    },
+    "stephen": {
+        "reference_path": "./audios/stephen_colbert.wav",
+        "reference_prompt": f"{SPEAKER_TAG} Oh sarcasm works great..sarcasm is absolutely the best thing for a president to do in the middle of a pandemic. You're doing amaaazing, 'Mr. President'.",
+        "description": "Stephen Colbert (dry, witty)"
+    },
+    "ricky": {
+        "reference_path": "./audios/ricky_gervaise.wav",
+        "reference_prompt": f"{SPEAKER_TAG} All the best actors have jumped to Netflix and HBO, you know, and the actors who just do hollywood movies now do fantasy adventure nonsense..they wear masks and capes and reaaally tight costumes. Their job isn't acting anymore! It's going to the gym twice a day and taking steroids really.",
+        "description": "Ricky Gervais (brutally honest)"
+    },
+    "my_voice": {
+        "reference_path": None,  # Will be set dynamically from recorded audio
+        "reference_prompt": None,  # Will be set from transcription
+        "description": "Your own voice (cloned from recording)"
+    }
+}
+
+# Shared configuration
+LAUGH_TRACK_PATH = "./audios/sitcom_laugh_track.wav"
+
+
+def load_mode_config(mode: str) -> tuple:
+    """Load configuration for the specified emotion mode.
+    
+    Args:
+        mode: The emotion mode (angry, sarcastic, or roast)
+        
+    Returns:
+        Tuple of (TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT)
+    """
+    if mode not in MODE_CONFIG:
+        raise ValueError(f"Unknown mode: {mode}. Valid modes: {list(MODE_CONFIG.keys())}")
+    
+    module_name = MODE_CONFIG[mode]["module"]
+    
+    try:
+        # Dynamic import of the appropriate prompts module
+        prompts_module = __import__(module_name)
+        
+        return (
+            prompts_module.TRANSLATOR_SYSTEM_PROMPT,
+            prompts_module.TTS_SYSTEM_PROMPT
+        )
+    except ImportError as e:
+        raise ImportError(f"Failed to import module '{module_name}': {e}")
+    except AttributeError as e:
+        raise AttributeError(f"Module '{module_name}' is missing required attributes: {e}")
+
+
+def load_voice_config(voice: str, recorded_audio: bytes = None, transcription: str = None) -> VoiceReference:
+    """Load configuration for the specified voice.
+    
+    Args:
+        voice: The voice name (keegan, stephen, ricky, or my_voice)
+        recorded_audio: The recorded audio bytes (required for my_voice)
+        transcription: The transcribed text (required for my_voice)
+        
+    Returns:
+        VoiceReference object
+    """
+    if voice not in VOICE_CONFIG:
+        raise ValueError(f"Unknown voice: {voice}. Valid voices: {list(VOICE_CONFIG.keys())}")
+    
+    config = VOICE_CONFIG[voice]
+    
+    # Special handling for voice cloning
+    if voice == "my_voice":
+        if recorded_audio is None or transcription is None:
+            raise ValueError("Voice cloning requires recorded_audio and transcription")
+        # Use the recorded audio and transcription as reference
+        reference_prompt = f"{SPEAKER_TAG} {transcription}"
+        return VoiceReference(recorded_audio, reference_prompt)
+    
+    # Pre-recorded voice from file
+    return VoiceReference(config["reference_path"], config["reference_prompt"])
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Higgs Audio Emotion Demo")
-    parser.add_argument("--mode", choices=["angry", "sarcastic"], default="angry",
-                        help="Choose emotional mode (angry or sarcastic)")
-    parser.add_argument("--duration", type=float, default=None,
-                        help="Set maximum recording duration in seconds (optional)")
+    parser = argparse.ArgumentParser(description="Higgs Audio Emotion Demo with Voice Recording")
+    parser.add_argument(
+        "--mode",
+        choices=list(MODE_CONFIG.keys()),
+        default="angry",
+        help="Choose emotional mode: " + ", ".join([f"{k} ({v['description']})" for k, v in MODE_CONFIG.items()])
+    )
+    parser.add_argument(
+        "--voice",
+        choices=list(VOICE_CONFIG.keys()),
+        default="keegan",
+        help="Choose voice: " + ", ".join([f"{k} ({v['description']})" for k, v in VOICE_CONFIG.items()])
+    )
+    parser.add_argument(
+        "--duration",
+        type=float,
+        default=None,
+        help="Set maximum recording duration in seconds (optional)"
+    )
     args = parser.parse_args()
 
-    # Import correct prompt file dynamically
-    if args.mode == "angry":
-        from prompts import TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT, VOICE_REFERENCE_PROMPT, VOICE_REFERENCE_PATH
-        laugh_track = "./audios/sitcom_laugh_track.wav"
-    else:
-        from prompts_sarcastic import TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT, VOICE_REFERENCE_PROMPT
-        VOICE_REFERENCE_PATH = "./audios/sarcasm_clip.wav"
-        laugh_track = "./audios/sitcom_laugh_track.wav"  # Optional alt track
+    # Load mode configuration (for emotion translation)
+    try:
+        TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT = load_mode_config(args.mode)
+    except (ValueError, ImportError, AttributeError) as e:
+        print(f"❌ Error loading mode configuration: {e}")
+        return
 
     client = get_client()
 
-    print(f"🎭 Mode selected: {args.mode.capitalize()}")
+    print(f"🎭 Mode: {args.mode.capitalize()} ({MODE_CONFIG[args.mode]['description']})")
+    print(f"🎤 Voice: {args.voice.capitalize()} ({VOICE_CONFIG[args.voice]['description']})")
     if args.duration:
         print(f"🎧 Fixed recording duration: {args.duration} seconds")
-    print("Listening for speech...")
+    print("🎵 Listening for speech...")
+    print()
 
     # Step 1: Record
     audio_bytes = record_microphone_segment(duration=args.duration)
 
     # Step 2: Transcribe
     captured_speech = transcribe_audio(client, audio_bytes)
+    
+    # Load voice configuration (for TTS voice)
+    # For voice cloning, we need the recorded audio and transcription
+    try:
+        voice_reference = load_voice_config(
+            args.voice, 
+            recorded_audio=audio_bytes if args.voice == "my_voice" else None,
+            transcription=captured_speech if args.voice == "my_voice" else None
+        )
+    except ValueError as e:
+        print(f"❌ Error loading voice configuration: {e}")
+        return
+    except FileNotFoundError as e:
+        print(f"❌ Error: {e}")
+        return
+
+    # Verify laugh track exists
+    if not os.path.exists(LAUGH_TRACK_PATH):
+        print(f"⚠️  Warning: Laugh track file not found: {LAUGH_TRACK_PATH}")
 
     # Step 3: Translate
     emotional_text = translate_emotion(client, captured_speech, TRANSLATOR_SYSTEM_PROMPT)
     print(f"Rephrased text: {emotional_text}\nGenerating speech...")
 
     # Step 4: TTS
-    stream_iter = tts_generate_streaming(client, emotional_text,
-                                         TTS_SYSTEM_PROMPT, VOICE_REFERENCE_PROMPT, VOICE_REFERENCE_PATH)
+    stream_iter = tts_generate_streaming(client, emotional_text, TTS_SYSTEM_PROMPT, voice_reference)
     play_streaming_audio(stream_iter)
 
     # Step 5: Add laugh track
-    play_wav_file(laugh_track, volume=0.25)
+    play_wav_file(LAUGH_TRACK_PATH, volume=0.25)
 
     print("✅ Done.")
 

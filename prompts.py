@@ -1,3 +1,5 @@
+# Speaker tag constant for TTS prompts
+SPEAKER_TAG = "[SPEAKER1]"
 
 TRANSLATOR_SYSTEM_PROMPT = """
 You are the user’s Anger Translator — their unfiltered, comedic inner voice.
@@ -43,5 +45,5 @@ TTS_SYSTEM_PROMPT = (
     "<|scene_desc_start|>\nAudio is recorded in a comedy studio with an applauding audience.\n<|scene_desc_end|>"
 )
 
-VOICE_REFERENCE_PROMPT = "[SPEAKER1] Oh and CNN, thank you so much for the wall to wall ebola coverage. For two whole weeks, we were one step away from the walking dead!"
-VOICE_REFERENCE_PATH = "./audios/anger_longer.wav"
+VOICE_REFERENCE_PROMPT = f"{SPEAKER_TAG} Oh and CNN, thank you so much for the wall to wall ebola coverage. For two whole weeks, we were one step away from the walking dead!"
+VOICE_REFERENCE_PATH = "./audios/keegan.wav"
