@@ -67,30 +67,112 @@ def tts_generate_streaming(client: OpenAI, text: str, tts_prompt: str, voice_pro
     return streaming_tts_generate(client, text, tts_prompt, voice_ref, save_prompt=True)
 
 
-def record_microphone_segment(duration: float = 5.0, rate: int = 16_000, chunk_size: int = 1024) -> bytes:
-    """Record audio from the microphone for a fixed duration."""
+def record_microphone_segment(
+    threshold: float = 500.0,
+    rate: int = 16_000,
+    chunk_size: int = 1024,
+    pre_seconds: float = 1.0,
+    post_seconds: float = 1.0,
+    silence_tolerance: float = 2.0,
+    max_duration: float = 30.0,
+    input_device_index: int = 0,
+    emit_callback=None
+) -> bytes:
+    """Record audio from the microphone with automatic voice activity detection.
+    
+    Args:
+        threshold: RMS amplitude threshold above which audio is considered speech
+        rate: Sample rate in Hz for recording
+        chunk_size: Number of samples to read per frame
+        pre_seconds: Seconds of audio to retain prior to the start of speech
+        post_seconds: Seconds of audio to capture after the end of speech
+        silence_tolerance: Maximum duration of consecutive silence before terminating
+        max_duration: Maximum recording duration in seconds (safety limit)
+        input_device_index: Audio input device index
+        emit_callback: Optional callback function to emit status updates
+    
+    Returns:
+        Raw 16-bit PCM audio including context before and after detected speech
+    """
+    from collections import deque
+    
     p = pyaudio.PyAudio()
     stream = p.open(
         format=pyaudio.paInt16,
         channels=1,
         rate=rate,
         input=True,
-        input_device_index=0,
         frames_per_buffer=chunk_size,
+        input_device_index=input_device_index,
     )
-
+    
+    # Compute the number of frames that correspond to the pre/post buffers and silence tolerance
+    pre_max_chunks = int(pre_seconds * rate / chunk_size)
+    post_max_chunks = int(post_seconds * rate / chunk_size)
+    silence_max_chunks = int(silence_tolerance * rate / chunk_size)
+    max_chunks = int(max_duration * rate / chunk_size)
+    
+    pre_buffer: deque = deque(maxlen=pre_max_chunks)
     frames: list[bytes] = []
-    start_time = time.time()
+    recording = False
+    silent_chunks = 0
+    total_chunks = 0
     
     try:
-        while time.time() - start_time < duration:
+        if emit_callback:
+            emit_callback('status', {'step': 'listening', 'message': '👂 Listening... Start speaking!'})
+        
+        while True:
             data = stream.read(chunk_size)
-            frames.append(data)
+            total_chunks += 1
+            
+            # Safety limit: stop after max_duration
+            if total_chunks >= max_chunks:
+                if emit_callback:
+                    emit_callback('status', {'step': 'max_duration', 'message': '⏱️ Maximum duration reached'})
+                break
+            
+            # Maintain a rolling buffer for pre-speech audio
+            pre_buffer.append(data)
+            
+            # Compute RMS amplitude
+            audio_np = np.frombuffer(data, dtype=np.int16)
+            rms = np.sqrt(np.mean(audio_np.astype(np.float64) ** 2))
+            
+            if recording:
+                frames.append(data)
+                
+                # Check for silence
+                if rms < threshold:
+                    silent_chunks += 1
+                else:
+                    silent_chunks = 0
+                
+                # If we've seen too much silence, capture trailing audio and stop
+                if silent_chunks >= silence_max_chunks:
+                    if emit_callback:
+                        emit_callback('status', {'step': 'silence_detected', 'message': '🤫 Silence detected, stopping...'})
+                    
+                    # Capture post_seconds of additional audio
+                    for _ in range(post_max_chunks):
+                        trailing = stream.read(chunk_size)
+                        frames.append(trailing)
+                    break
+            else:
+                # Wait for speech start
+                if rms >= threshold:
+                    recording = True
+                    if emit_callback:
+                        emit_callback('status', {'step': 'speech_detected', 'message': '🎤 Speech detected, recording...'})
+                    
+                    # Include the pre-speech buffer in the output
+                    frames.extend(list(pre_buffer))
+                    frames.append(data)
     finally:
         stream.stop_stream()
         stream.close()
         p.terminate()
-
+    
     return b"".join(frames)
 
 
@@ -173,10 +255,14 @@ def handle_recording(data):
     """Handle audio recording and processing."""
     try:
         mode = data.get('mode', 'angry')
-        duration = float(data.get('duration', 5.0))
         language = data.get('language', 'english')  # NEW: Language support
         voice = data.get('voice', 'keegan')  # NEW: Voice selection support
         laugh_track_enabled = data.get('laughTrack', True)  # NEW: Laugh track toggle
+        
+        # Voice activity detection parameters (can be customized)
+        threshold = float(data.get('threshold', 500.0))
+        silence_tolerance = float(data.get('silenceTolerance', 2.0))
+        max_duration = float(data.get('maxDuration', 30.0))
         
         # Load mode configuration (for emotion translation) - NEW: Using streaming script logic
         try:
@@ -211,9 +297,13 @@ def handle_recording(data):
             history_length = get_conversation_history_length()
             print(f"💬 Found {history_length} previous messages in conversation history")
 
-        # Step 1: Record
-        emit('status', {'step': 'recording', 'message': f'Recording for {duration} seconds...'})
-        audio_bytes = record_microphone_segment(duration=duration)
+        # Step 1: Record with voice activity detection
+        audio_bytes = record_microphone_segment(
+            threshold=threshold,
+            silence_tolerance=silence_tolerance,
+            max_duration=max_duration,
+            emit_callback=emit
+        )
         emit('status', {'step': 'recording_complete', 'message': 'Recording complete!'})
 
         # Step 2: Transcribe
