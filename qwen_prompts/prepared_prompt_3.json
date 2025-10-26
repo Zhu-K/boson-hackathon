@@ -1,8 +1,8 @@
 {
-  "recording_number": 1,
+  "recording_number": 3,
   "model_type": "qwen",
-  "current_text": "the",
-  "conversation_history_length": 0,
+  "current_text": "那是孙贵吗",
+  "conversation_history_length": 2,
   "messages": [
     {
       "index": 0,
@@ -13,6 +13,16 @@
       "index": 1,
       "role": "user",
       "content": "the"
+    },
+    {
+      "index": 2,
+      "role": "assistant",
+      "content": "The what? Oh, you’re still here? I was starting to think you’d finally disappeared like your last relationship and your sense of direction."
+    },
+    {
+      "index": 3,
+      "role": "user",
+      "content": "那是孙贵吗"
     }
   ]
 }

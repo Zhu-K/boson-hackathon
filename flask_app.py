@@ -25,90 +25,12 @@ from roast_conversation import (
 # Load environment variables
 load_dotenv()
 
-# Speaker tag constant for TTS prompts
-SPEAKER_TAG = "[SPEAKER1]"
-
-
-class VoiceReference:
-    """Handle voice reference audio for TTS, supporting both file paths and raw audio bytes."""
-    
-    def __init__(self, audio: str | bytes, text: str) -> None:
-        """
-        Initialize voice reference.
-        
-        Args:
-            audio: Either a file path (str) or raw audio bytes
-            text: The reference text/prompt for this voice
-        """
-        if isinstance(audio, str):
-            # File path - read and encode
-            self.voice_audio = b64(audio)
-        else:
-            # Raw bytes - convert to WAV format first
-            with io.BytesIO() as buffer:
-                with wave.open(buffer, "wb") as wf:
-                    wf.setnchannels(1)  # Mono
-                    wf.setsampwidth(2)  # 16-bit samples
-                    wf.setframerate(16_000)  # Must match record_microphone_segment()
-                    wf.writeframes(audio)
-                wav_data = buffer.getvalue()
-            # Base64-encode the WAV for transmission
-            self.voice_audio = base64.b64encode(wav_data).decode("utf-8")
-        
-        self.text = text
-
-# Voice configuration mapping (for TTS voice characteristics)
-VOICE_CONFIG = {
-    "keegan": {
-        "reference_path": "./audios/keegan.wav",
-        "reference_prompt": f"{SPEAKER_TAG} Oh and CNN, thank you so much for the wall to wall ebola coverage. For two whole weeks, we were one step away from the walking dead!",
-        "description": "Keegan-Michael Key (energetic, comedic)"
-    },
-    "stephen": {
-        "reference_path": "./audios/stephen_colbert.wav",
-        "reference_prompt": f"{SPEAKER_TAG} Oh sarcasm works great..sarcasm is absolutely the best thing for a president to do in the middle of a pandemic. You're doing amaaazing, 'Mr. President'.",
-        "description": "Stephen Colbert (dry, witty)"
-    },
-    "ricky": {
-        "reference_path": "./audios/ricky_gervaise.wav",
-        "reference_prompt": f"{SPEAKER_TAG} All the best actors have jumped to Netflix and HBO, you know, and the actors who just do hollywood movies now do fantasy adventure nonsense..they wear masks and capes and reaaally tight costumes. Their job isn't acting anymore! It's going to the gym twice a day and taking steroids really.",
-        "description": "Ricky Gervais (brutally honest)"
-    },
-    "my_voice": {
-        "reference_path": None,  # Will be set dynamically from recorded audio
-        "reference_prompt": None,  # Will be set from transcription
-        "description": "Your own voice (cloned from recording)"
-    }
-}
-
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'higgs-audio-secret-key'
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Global client
 client = None
-
-
-def inject_language_instruction(prompt: str, language: str) -> str:
-    """Inject language instruction after the first sentence of the prompt.
-    
-    Args:
-        prompt: The original system prompt
-        language: Target language (english or mandarin)
-    
-    Returns:
-        Modified prompt with language instruction
-    """
-    if language.lower() == "mandarin":
-        # Find the first sentence (ends with period, newline, or em dash)
-        lines = prompt.strip().split('\n')
-        if lines:
-            first_line = lines[0]
-            language_instruction = "You must translate and output all your output in Mandarin. Never use any other language."
-            # Insert after first line
-            modified_lines = [first_line, language_instruction] + lines[1:]
-            return '\n'.join(modified_lines)
-    return prompt
 
 
 def get_client() -> OpenAI:
@@ -168,27 +90,20 @@ def transcribe_audio(client: OpenAI, audio_bytes: bytes) -> str:
     return response.choices[0].message.content
 
 
-def tts_generate_streaming(client: OpenAI, text: str, tts_prompt: str, voice_ref: VoiceReference) -> Iterator:
-    """Generate TTS for the given text using Higgs Audio.
-    
-    Args:
-        client: OpenAI client
-        text: Text to convert to speech
-        tts_prompt: System prompt for TTS
-        voice_ref: VoiceReference object containing audio and text
-    """
+def tts_generate_streaming(client: OpenAI, text: str, tts_prompt: str, voice_prompt: str, ref_path: str) -> Iterator:
+    """Generate TTS for the given text using Higgs Audio."""
     return client.chat.completions.create(
         model="higgs-audio-generation-Hackathon",
         messages=[
             {"role": "system", "content": tts_prompt},
-            {"role": "user", "content": voice_ref.text},
+            {"role": "user", "content": voice_prompt},
             {
                 "role": "assistant",
                 "content": [
-                    {"type": "input_audio", "input_audio": {"data": voice_ref.voice_audio, "format": "wav"}},
+                    {"type": "input_audio", "input_audio": {"data": b64(ref_path), "format": "wav"}},
                 ],
             },
-            {"role": "user", "content": f"{SPEAKER_TAG} {text}"},
+            {"role": "user", "content": f"[SPEAKER1] {text}"},
         ],
         modalities=["text", "audio"],
         max_completion_tokens=4096,
@@ -280,9 +195,7 @@ def handle_recording(data):
     """Handle audio recording and processing."""
     try:
         mode = data.get('mode', 'angry')
-        voice = data.get('voice', 'keegan')
         duration = float(data.get('duration', 5.0))
-        language = data.get('language', 'english')
         
         # Increment recording counter for roast mode
         if mode == "roast":
@@ -299,10 +212,8 @@ def handle_recording(data):
             from prompts_heckle import TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT, VOICE_REFERENCE_PROMPT, VOICE_REFERENCE_PATH
             laugh_track = "./audios/sitcom_laugh_track.wav"
         else:
-            from prompts_roast import TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT
-    
-            # Inject language instruction if Mandarin is selected
-            TRANSLATOR_SYSTEM_PROMPT = inject_language_instruction(TRANSLATOR_SYSTEM_PROMPT, language)
+            from prompts_sarcastic import TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT, VOICE_REFERENCE_PROMPT, VOICE_REFERENCE_PATH
+            laugh_track = "./audios/sitcom_laugh_track.wav"
 
         # Initialize client
         global client
@@ -313,31 +224,12 @@ def handle_recording(data):
         emit('status', {'step': 'recording', 'message': f'Recording for {duration} seconds...'})
         audio_bytes = record_microphone_segment(duration=duration)
         emit('status', {'step': 'recording_complete', 'message': 'Recording complete!'})
-        
+
         # Step 2: Transcribe
-        emit('status', {'step': 'transcribing', 'message': 'Transcribing audio...'})
+        emit('status', {'step': 'transcribing', 'message': 'Transcribing your speech...'})
         captured_speech = transcribe_audio(client, audio_bytes)
         emit('transcription', {'text': captured_speech})
-        
-        # Get voice configuration
-        voice_config = VOICE_CONFIG.get(voice, VOICE_CONFIG["keegan"])
-        
-        # Create voice reference
-        if voice == "my_voice":
-            # Voice cloning from recorded audio
-            reference_prompt = f"{SPEAKER_TAG} {captured_speech}"
-            voice_reference = VoiceReference(audio_bytes, reference_prompt)
-        else:
-            # Pre-recorded voice from file
-            voice_reference = VoiceReference(voice_config["reference_path"], voice_config["reference_prompt"])
-        
-        # Laugh track path
-        laugh_track = "./audios/sitcom_laugh_track.wav"
-
-        # Initialize client
-        global client
-        if client is None:
-            client = get_client()
+        emit('status', {'step': 'transcription_complete', 'message': 'Transcription complete!'})
 
         # Step 3: Translate
         emit('status', {'step': 'translating', 'message': f'Translating to {mode} mode...'})
@@ -357,7 +249,7 @@ def handle_recording(data):
         # Use TTS generation (same for all modes, no conversation history needed for TTS)
         stream_iter = tts_generate_streaming(
             client, emotional_text,
-            TTS_SYSTEM_PROMPT, voice_reference
+            TTS_SYSTEM_PROMPT, VOICE_REFERENCE_PROMPT, VOICE_REFERENCE_PATH
         )
         
         # Collect audio chunks for saving (roast mode only)
