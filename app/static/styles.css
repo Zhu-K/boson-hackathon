@@ -4,6 +4,7 @@
     --primary: #8a7dff;
     --accent: #ff6b6b;
     --accent-2: #4ecdc4;
+    --accent-3: #2ca19a;
     --card-bg: #ffffff;
     --muted: #6b7280;
     --ink: #1f2937;
@@ -47,7 +48,7 @@ h1 {
 
 .subtitle {
     text-align: center;
-    color: var(--accent-2);
+    color: var(--accent-3);
     font-size: 1.2em;
     margin-bottom: 30px;
 }
