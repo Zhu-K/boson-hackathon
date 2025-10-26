@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
 import base64
+import io
 import os
 import wave
 from dotenv import load_dotenv
@@ -137,6 +138,21 @@ def handle_recording(data):
         captured_speech = transcribe_audio(client, audio_bytes)
         emit('transcription', {'text': captured_speech})
         emit('status', {'step': 'transcription_complete', 'message': 'Transcription complete!'})
+        
+        # Send user input audio to frontend for saving
+        # Convert raw PCM to WAV format first, then extract PCM for consistency with TTS audio
+        with io.BytesIO() as buffer:
+            with wave.open(buffer, "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(16_000)
+                wf.writeframes(audio_bytes)
+            wav_data = buffer.getvalue()
+        
+        # Extract just the PCM data (skip WAV header - 44 bytes)
+        pcm_data = wav_data[44:]
+        user_audio_b64 = base64.b64encode(pcm_data).decode('utf-8')
+        emit('user_audio', {'data': user_audio_b64, 'sample_rate': 16000})
 
         # Load voice configuration - NEW: From streaming script
         try:
