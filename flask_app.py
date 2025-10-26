@@ -79,6 +79,28 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 client = None
 
 
+def inject_language_instruction(prompt: str, language: str) -> str:
+    """Inject language instruction after the first sentence of the prompt.
+    
+    Args:
+        prompt: The original system prompt
+        language: Target language (english or mandarin)
+    
+    Returns:
+        Modified prompt with language instruction
+    """
+    if language.lower() == "mandarin":
+        # Find the first sentence (ends with period, newline, or em dash)
+        lines = prompt.strip().split('\n')
+        if lines:
+            first_line = lines[0]
+            language_instruction = "You must translate and output all your output in Mandarin. Never use any other language."
+            # Insert after first line
+            modified_lines = [first_line, language_instruction] + lines[1:]
+            return '\n'.join(modified_lines)
+    return prompt
+
+
 def get_client() -> OpenAI:
     """Initialize OpenAI client with Boson API."""
     api_key = os.getenv("BOSON_API_KEY")
@@ -228,6 +250,7 @@ def handle_recording(data):
         mode = data.get('mode', 'angry')
         voice = data.get('voice', 'keegan')
         duration = float(data.get('duration', 5.0))
+        language = data.get('language', 'english')
         
         # Load appropriate prompts for emotion mode
         if mode == "angry":
@@ -236,6 +259,9 @@ def handle_recording(data):
             from prompts_sarcastic import TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT
         else:  # roast mode
             from prompts_roast import TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT
+        
+        # Inject language instruction if Mandarin is selected
+        TRANSLATOR_SYSTEM_PROMPT = inject_language_instruction(TRANSLATOR_SYSTEM_PROMPT, language)
         
         # Step 1: Record
         emit('status', {'step': 'recording', 'message': f'Recording for {duration} seconds...'})

@@ -295,16 +295,15 @@ def load_mode_config(mode: str) -> tuple:
     try:
         # Dynamic import of the appropriate prompts module
         prompts_module = __import__(module_name)
-        
         return (
             prompts_module.TRANSLATOR_SYSTEM_PROMPT,
-            prompts_module.TTS_SYSTEM_PROMPT
+            prompts_module.TTS_SYSTEM_PROMPT,
+            prompts_module.LANGUAGE_TEMPLATE
         )
     except ImportError as e:
         raise ImportError(f"Failed to import module '{module_name}': {e}")
     except AttributeError as e:
         raise AttributeError(f"Module '{module_name}' is missing required attributes: {e}")
-
 
 def load_voice_config(voice: str, recorded_audio: bytes = None, transcription: str = None) -> VoiceReference:
     """Load configuration for the specified voice.
@@ -354,11 +353,22 @@ def main():
         default=None,
         help="Set maximum recording duration in seconds (optional)"
     )
+    parser.add_argument(
+        "--language",
+        default="english",
+        help="Choose output language: english or mandarin"
+    )
     args = parser.parse_args()
 
     # Load mode configuration (for emotion translation)
     try:
-        TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT = load_mode_config(args.mode)
+        TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT, LANGUAGE_TEMPLATE = load_mode_config(args.mode)
+        if args.language is not "english":
+            language_instruction = LANGUAGE_TEMPLATE.format(language=args.language)
+        else:
+            language_instruction = ""
+            
+        llm_system_prompt = TRANSLATOR_SYSTEM_PROMPT.format(language_instruction=language_instruction, language_instruction_repeated=language_instruction)
     except (ValueError, ImportError, AttributeError) as e:
         print(f"❌ Error loading mode configuration: {e}")
         return
@@ -367,6 +377,7 @@ def main():
 
     print(f"🎭 Mode: {args.mode.capitalize()} ({MODE_CONFIG[args.mode]['description']})")
     print(f"🎤 Voice: {args.voice.capitalize()} ({VOICE_CONFIG[args.voice]['description']})")
+    print(f"🌐 Language: {args.language.capitalize()}")
     if args.duration:
         print(f"🎧 Fixed recording duration: {args.duration} seconds")
     print("🎵 Listening for speech...")
@@ -398,7 +409,7 @@ def main():
         print(f"⚠️  Warning: Laugh track file not found: {LAUGH_TRACK_PATH}")
 
     # Step 3: Translate
-    emotional_text = translate_emotion(client, captured_speech, TRANSLATOR_SYSTEM_PROMPT)
+    emotional_text = translate_emotion(client, captured_speech, llm_system_prompt)
     print(f"Rephrased text: {emotional_text}\nGenerating speech...")
 
     # Step 4: TTS
