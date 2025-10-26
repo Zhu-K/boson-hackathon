@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎤 Pocket Comedian</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 Pocket Comedian</h1>
+        <p class="subtitle">A tiny AI that turns whatever you say into a punchline.</p>
+
+        <div class="controls">
+            <div class="control-group">
+                <label for="mode">🎭 Mode</label>
+                <select id="mode">
+                    <option value="angry">Anger Translator</option>
+                    <option value="sarcastic">Deadpan Sarcasm</option>
+                    <option value="roast">Roast</option>
+                    <option value="conversation">Conversation</option>
+                </select>
+                <div id="mode-description" class="chip chip-info" style="margin-top: 6px;"></div>
+            </div>
+
+            <div class="control-group">
+                <label for="voice">🎙️ Voice</label>
+                <select id="voice">
+                    <option value="keegan">Keegan-Michael Key</option>
+                    <option value="stephen">Stephen Colbert</option>
+                    <option value="ricky">Ricky Gervais</option>
+                    <option value="obama">Barack Obama</option>
+                    <option value="my_voice">🎙️ My Voice (Clone)</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="language">🌐 Language</label>
+                <select id="language">
+                    <option value="english">English</option>
+                    <option value="mandarin">Mandarin</option>
+                    <option value="french">French</option>
+                    <option value="german">German</option>
+                    <option value="spanish">Spanish</option>
+                    <option value="italian">Italian</option>
+                    <option value="japanese">Japanese</option>
+                    <option value="korean">Korean</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="laughTrack">😂 Laugh Track</label>
+                <label class="switch">
+                    <input type="checkbox" id="laughTrack" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+        </div>
+
+
+        <details style="margin: 15px 0; padding: 10px; background: #f8f9fa; border-radius: 8px;">
+            <summary style="cursor: pointer; font-weight: 600; color: #667eea;">🎚️ Microphone & Recording</summary>
+            <div style="margin-top: 15px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div class="control-group" id="input-device-group">
+                    <label for="inputDevice">🎙️ Input Device</label>
+                    <select id="inputDevice">
+                        <option value="0">Default microphone</option>
+                    </select>
+                    <div class="slider-value" id="inputDevice-hint" style="display:block; color:#777;">Select your microphone</div>
+                </div>
+                <div class="control-group">
+                    <label for="threshold">🎚️ Speech Threshold</label>
+                    <input type="range" id="threshold" min="100" max="5000" step="50" value="500">
+                    <div class="slider-value"><span id="threshold-value">500</span></div>
+                </div>
+                <div class="control-group">
+                    <label for="silenceTolerance">Silence Timeout</label>
+                    <input type="range" id="silenceTolerance" min="1" max="5" step="0.5" value="1">
+                    <div class="slider-value"><span id="silenceTolerance-value">1.0</span>s</div>
+                </div>
+                <div class="control-group">
+                    <label for="maxDuration">Max Duration</label>
+                    <input type="range" id="maxDuration" min="10" max="60" step="5" value="30">
+                    <div class="slider-value"><span id="maxDuration-value">30</span>s</div>
+                </div>
+            </div>
+            <div style="margin-top: 10px; font-size: 0.85em; color: #666;">
+                <strong>Silence Timeout:</strong> Stop listening after this much silence.<br>
+                <strong>Max Duration:</strong> Safety cap on a single recording.
+            </div>
+        </details>
+
+        <button id="recordBtn" onclick="startRecording()">🎙️ Start the Set</button>
+        <button id="continueBtn" onclick="continueConversation()" style="display: none;">🔄 Keep the Banter Going</button>
+        <button id="saveAudioBtn" onclick="saveAudio()">💾 Save Clip</button>
+        
+        <div id="roast-controls" style="display: none; text-align: center; margin: 10px 0;">
+            <div id="history-indicator" style="color: #4ECDC4; font-size: 0.9em; margin-bottom: 10px;">
+                💬 Conversation history active
+            </div>
+            <button id="clearHistoryBtn" onclick="clearHistory()" style="width: auto; padding: 8px 16px; font-size: 0.9em; background: linear-gradient(135deg, #FF6B6B, #FF8E53);">
+                🗑️ Clear History
+            </button>
+        </div>
+
+        <div id="status" class="status"></div>
+
+        <!-- Conversation history UI removed for Conversation mode to keep UI consistent -->
+
+        <!-- Current Exchange -->
+        <div id="current-exchange">
+            <div id="transcription" class="result-box">
+                <div class="result-label">🗣️ You said:</div>
+                <div id="transcription-text" class="result-text"></div>
+            </div>
+
+            <div id="translation" class="result-box">
+                <div class="result-label" id="translation-label">🤖 AI Response:</div>
+                <div id="translation-text" class="result-text"></div>
+            </div>
+
+            <div id="audio-container" class="audio-player">
+                <div class="result-label">🎧 Live Performance</div>
+                <div id="audio-status">Warming up the mic...</div>
+            </div>
+        </div>
+
+        <div class="footer">
+            Powered by Higgs Audio & Boson AI
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let audioContext;
+        let nextStartTime = 0;
+        let ttsCompleted = false;
+        let expectingLaugh = false;
+        let laughPlayed = false;
+        let hideScheduled = false;
+
+        // Update slider displays
+        document.getElementById('silenceTolerance').addEventListener('input', function() {
+            document.getElementById('silenceTolerance-value').textContent = this.value;
+        });
+        
+        document.getElementById('maxDuration').addEventListener('input', function() {
+            document.getElementById('maxDuration-value').textContent = this.value;
+        });
+        const thresholdEl = document.getElementById('threshold');
+        if (thresholdEl) {
+            const tv = document.getElementById('threshold-value');
+            thresholdEl.addEventListener('input', function(){ if (tv) tv.textContent = this.value; });
+        }
+
+        // Check conversation history status
+        function checkHistoryStatus() {
+            const mode = document.getElementById('mode').value;
+            if (mode === 'conversation') {
+                fetch('/history_status')
+                    .then(response => response.json())
+                    .then(data => {
+                        const roastControls = document.getElementById('roast-controls');
+                        const continueBtn = document.getElementById('continueBtn');
+                        const recordBtn = document.getElementById('recordBtn');
+                        
+                        if (data.has_history) {
+                            roastControls.style.display = 'block';
+                            continueBtn.style.display = 'block';
+                            continueBtn.disabled = false;
+                            // Hide start recording when history exists
+                            if (recordBtn) recordBtn.style.display = 'none';
+                        } else {
+                            roastControls.style.display = 'none';
+                            continueBtn.style.display = 'none';
+                            if (recordBtn) recordBtn.style.display = 'inline-block';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error checking history status:', error);
+                    });
+            }
+        }
+
+        // Mode to default voice mapping
+        const modeVoiceDefaults = {
+            'angry': 'keegan',
+            'sarcastic': 'stephen',
+            'roast': 'ricky',
+            'conversation': 'obama'
+        };
+
+        // Handle mode changes
+        document.getElementById('mode').addEventListener('change', function() {
+            const roastControls = document.getElementById('roast-controls');
+            const continueBtn = document.getElementById('continueBtn');
+            const voiceSelect = document.getElementById('voice');
+            const recordBtn = document.getElementById('recordBtn');
+            
+            // Set default voice for the selected mode
+            const defaultVoice = modeVoiceDefaults[this.value];
+            if (defaultVoice) {
+                voiceSelect.value = defaultVoice;
+            }
+            
+            if (this.value === 'conversation') {
+                checkHistoryStatus();
+            } else {
+                // Hide roast-specific controls for other modes
+                roastControls.style.display = 'none';
+                continueBtn.style.display = 'none';
+                if (recordBtn) recordBtn.style.display = 'inline-block';
+            }
+            // Update mode description and theme
+            updateModeDescription(this.value);
+            applyTheme(this.value);
+        });
+
+        // Load audio input devices
+        function loadAudioDevices() {
+            fetch('/devices')
+                .then(r => r.json())
+                .then(data => {
+                    const sel = document.getElementById('inputDevice');
+                    if (!sel) return;
+                    sel.innerHTML = '';
+                    if (data && Array.isArray(data.devices) && data.devices.length > 0) {
+                        const defIdx = (data.default_index !== undefined && data.default_index !== null)
+                            ? String(data.default_index) : null;
+                        data.devices.forEach(dev => {
+                            const opt = document.createElement('option');
+                            const idxStr = String(dev.index);
+                            opt.value = idxStr;
+                            if (defIdx !== null && idxStr === defIdx) {
+                                opt.textContent = `*** ${dev.name} (DEFAULT)`;
+                                opt.selected = true;
+                            } else {
+                                opt.textContent = dev.name;
+                            }
+                            sel.appendChild(opt);
+                        });
+                        // Ensure default is selected if present
+                        if (defIdx !== null) sel.value = defIdx;
+                    } else {
+                        const opt = document.createElement('option');
+                        opt.value = '0';
+                        opt.textContent = '*** Default microphone (DEFAULT)';
+                        sel.appendChild(opt);
+                        const hint = document.getElementById('inputDevice-hint');
+                        if (hint) hint.textContent = 'No device list available; using system default';
+                    }
+                })
+                .catch(() => {
+                    const sel = document.getElementById('inputDevice');
+                    if (!sel) return;
+                    sel.innerHTML = '';
+                    const opt = document.createElement('option');
+                    opt.value = '0';
+                    opt.textContent = '*** Default microphone (DEFAULT)';
+                    sel.appendChild(opt);
+                });
+        }
+
+        // Check history status on page load and set initial voice
+        document.addEventListener('DOMContentLoaded', function() {
+            // Set initial voice based on default mode (angry)
+            const initialMode = document.getElementById('mode').value;
+            const initialVoice = modeVoiceDefaults[initialMode];
+            if (initialVoice) {
+                document.getElementById('voice').value = initialVoice;
+            }
+            
+            checkHistoryStatus();
+            loadAudioDevices();
+            updateModeDescription(initialMode);
+            applyTheme(initialMode);
+        });
+
+        // Mode descriptions
+        const MODE_DESCRIPTIONS = {
+            angry: 'Short, spicy rants — loud, fast, and funny.',
+            sarcastic: 'Dry, witty, eyebrow‑raised comebacks.',
+            roast: 'Playful burns with sharp punchlines.',
+            conversation: 'Friendly, quick‑witted banter over multiple turns.'
+        };
+
+        // Theming per mode
+        const MODE_THEMES = {
+            angry:  { bg1: '#2a1a1a', bg2: '#3e1f1f', primary: '#ff7b7b', accent: '#ff6b6b', accent2: '#f5a623' },
+            sarcastic: { bg1: '#1a1f2a', bg2: '#23293a', primary: '#8a7dff', accent: '#7dd3fc', accent2: '#94a3b8' },
+            roast:  { bg1: '#261b2a', bg2: '#3a2640', primary: '#ff8ab3', accent: '#ff6b9a', accent2: '#ffbd59' },
+            conversation: { bg1: '#1b1a27', bg2: '#2a2740', primary: '#8a7dff', accent: '#4ecdc4', accent2: '#8bdbb6' }
+        };
+        function applyTheme(mode) {
+            const t = MODE_THEMES[mode] || MODE_THEMES.conversation;
+            const root = document.documentElement;
+            root.style.setProperty('--bg1', t.bg1);
+            root.style.setProperty('--bg2', t.bg2);
+            root.style.setProperty('--primary', t.primary);
+            root.style.setProperty('--accent', t.accent);
+            root.style.setProperty('--accent-2', t.accent2);
+        }
+
+        function updateModeDescription(mode) {
+            const el = document.getElementById('mode-description');
+            if (!el) return;
+            el.textContent = MODE_DESCRIPTIONS[mode] || '';
+        }
+
+        // Fun, rotating translation label names
+        const RESPONSE_LABELS = [
+            'Totally reasonable response:',
+            'Questionably funny sidekick:',
+            "AI's best guess at comedy:",
+            'Your unsolicited punchline:',
+            'Dubiously wisecracking reply:',
+            'Certified giggle attempt:',
+            'Hypothetically humorous output:',
+            'Tastefully chaotic comeback:',
+            'Mildly helpful banter:',
+            'Jest-in-time response:'
+        ];
+
+        function randomResponseLabel() {
+            return RESPONSE_LABELS[Math.floor(Math.random() * RESPONSE_LABELS.length)];
+        }
+
+        // Initialize Web Audio API
+        function initAudioContext() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                nextStartTime = audioContext.currentTime;
+            }
+        }
+
+        function base64ToArrayBuffer(base64) {
+            const binaryString = window.atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        function createWavBlob(pcmData, sampleRate) {
+            const numChannels = 1; // mono
+            const bitsPerSample = 16;
+            const bytesPerSample = bitsPerSample / 8;
+            const blockAlign = numChannels * bytesPerSample;
+            const byteRate = sampleRate * blockAlign;
+            const dataSize = pcmData.length;
+            const fileSize = 36 + dataSize;
+
+            const buffer = new ArrayBuffer(44 + dataSize);
+            const view = new DataView(buffer);
+
+            // WAV header
+            const writeString = (offset, string) => {
+                for (let i = 0; i < string.length; i++) {
+                    view.setUint8(offset + i, string.charCodeAt(i));
+                }
+            };
+
+            writeString(0, 'RIFF');
+            view.setUint32(4, fileSize, true);
+            writeString(8, 'WAVE');
+            writeString(12, 'fmt ');
+            view.setUint32(16, 16, true); // fmt chunk size
+            view.setUint16(20, 1, true); // PCM format
+            view.setUint16(22, numChannels, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, byteRate, true);
+            view.setUint16(32, blockAlign, true);
+            view.setUint16(34, bitsPerSample, true);
+            writeString(36, 'data');
+            view.setUint32(40, dataSize, true);
+
+            // Copy PCM data
+            const pcmView = new Uint8Array(buffer, 44);
+            pcmView.set(new Uint8Array(pcmData));
+
+            return new Blob([buffer], { type: 'audio/wav' });
+        }
+
+        function playAudioChunk(pcmData, sampleRate = 24000) {
+            initAudioContext();
+            
+            // Convert PCM to AudioBuffer
+            const int16Array = new Int16Array(pcmData);
+            const float32Array = new Float32Array(int16Array.length);
+            
+            // Convert int16 to float32 (-1.0 to 1.0)
+            for (let i = 0; i < int16Array.length; i++) {
+                float32Array[i] = int16Array[i] / 32768.0;
+            }
+            
+            // Create audio buffer with specified sample rate
+            const audioBuffer = audioContext.createBuffer(1, float32Array.length, sampleRate);
+            audioBuffer.getChannelData(0).set(float32Array);
+            
+            // Create source and play
+            const source = audioContext.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(audioContext.destination);
+            
+            // Schedule playback
+            const startTime = Math.max(nextStartTime, audioContext.currentTime);
+            source.start(startTime);
+            
+            // Update next start time
+            nextStartTime = startTime + audioBuffer.duration;
+        }
+
+        function startRecording() {
+            const mode = document.getElementById('mode').value;
+            const voice = document.getElementById('voice').value;
+            const language = document.getElementById('language').value;
+            const laughTrack = document.getElementById('laughTrack').checked;
+            const silenceTolerance = parseFloat(document.getElementById('silenceTolerance').value);
+            const maxDuration = parseFloat(document.getElementById('maxDuration').value);
+            const recordBtn = document.getElementById('recordBtn');
+            const continueBtn = document.getElementById('continueBtn');
+
+            // Reset UI
+            document.getElementById('transcription').classList.remove('show');
+            document.getElementById('translation').classList.remove('show');
+            document.getElementById('audio-container').classList.remove('show');
+            document.getElementById('saveAudioBtn').style.display = 'none';
+            // Set a fresh, fun translation label each turn
+            const tLabel = document.getElementById('translation-label');
+            if (tLabel) tLabel.textContent = '🎭 ' + randomResponseLabel();
+            // Reset playback tracking
+            ttsCompleted = false;
+            laughPlayed = false;
+            hideScheduled = false;
+            expectingLaugh = document.getElementById('laughTrack').checked;
+            
+            // Reset audio
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            nextStartTime = 0;
+            audioChunksForSave = []; // Clear saved audio chunks
+            
+            // Disable buttons
+            recordBtn.disabled = true;
+            continueBtn.style.display = 'none';
+            
+            // Emit recording event with VAD parameters
+            socket.emit('start_recording', { 
+                mode: mode, 
+                voice: voice, 
+                language: language, 
+                laughTrack: laughTrack,
+                inputDeviceIndex: document.getElementById('inputDevice') ? document.getElementById('inputDevice').value : 0,
+                threshold: parseFloat(document.getElementById('threshold') ? document.getElementById('threshold').value : 500),
+                silenceTolerance: silenceTolerance,
+                maxDuration: maxDuration
+            });
+        }
+
+        function continueConversation() {
+            const mode = document.getElementById('mode').value;
+            const voice = document.getElementById('voice').value;
+            const language = document.getElementById('language').value;
+            const laughTrack = document.getElementById('laughTrack').checked;
+            const silenceTolerance = parseFloat(document.getElementById('silenceTolerance').value);
+            const maxDuration = parseFloat(document.getElementById('maxDuration').value);
+            const recordBtn = document.getElementById('recordBtn');
+            const continueBtn = document.getElementById('continueBtn');
+            
+            // No visible conversation history in UI; no-op
+            
+            // Clear current results for new exchange
+            document.getElementById('transcription').classList.remove('show');
+            document.getElementById('translation').classList.remove('show');
+            document.getElementById('audio-container').classList.remove('show');
+            document.getElementById('transcription-text').textContent = '';
+            document.getElementById('translation-text').textContent = '';
+            document.getElementById('audio-status').textContent = 'Preparing audio player...';
+            const tLabel = document.getElementById('translation-label');
+            if (tLabel) tLabel.textContent = '🎭 ' + randomResponseLabel();
+            
+            // Reset audio
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            nextStartTime = 0;
+            
+            // Disable buttons
+            recordBtn.disabled = true;
+            continueBtn.disabled = true;
+            continueBtn.style.display = 'none';
+            
+            // Emit recording event with VAD parameters
+            socket.emit('start_recording', { 
+                mode: mode, 
+                voice: voice, 
+                language: language, 
+                laughTrack: laughTrack,
+                inputDeviceIndex: document.getElementById('inputDevice') ? document.getElementById('inputDevice').value : 0,
+                threshold: parseFloat(document.getElementById('threshold') ? document.getElementById('threshold').value : 500),
+                silenceTolerance: silenceTolerance,
+                maxDuration: maxDuration
+            });
+        }
+
+        // Conversation history UI removed; keep stubs for potential future use
+        function moveCurrentToHistory() {}
+        let currentAudioData = null; // retained for potential logging
+        function addToHistoryDisplay(userText, assistantText, audioData) {}
+
+        function saveAudio() {
+            if (audioChunksForSave.length === 0) {
+                alert('No audio to save!');
+                return;
+            }
+            
+            // Combine all chunks into a single array
+            let totalLength = 0;
+            audioChunksForSave.forEach(chunk => totalLength += chunk.length);
+            
+            const combinedAudio = new Uint8Array(totalLength);
+            let offset = 0;
+            audioChunksForSave.forEach(chunk => {
+                combinedAudio.set(chunk, offset);
+                offset += chunk.length;
+            });
+            
+            // Convert PCM to WAV format
+            const wavBlob = createWavBlob(combinedAudio, 24000); // 24kHz sample rate
+            
+            // Create download link
+            const url = URL.createObjectURL(wavBlob);
+            const a = document.createElement('a');
+            a.href = url;
+            
+            // Generate filename with timestamp
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+            const mode = document.getElementById('mode').value;
+            a.download = `higgs-audio-${mode}-${timestamp}.wav`;
+            
+            // Trigger download
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            
+            // Clean up
+            URL.revokeObjectURL(url);
+            
+            // Show success message
+            const statusDiv = document.getElementById('status');
+            statusDiv.className = 'status success';
+            statusDiv.textContent = '💾 Audio saved successfully!';
+        }
+
+        function clearHistory() {
+            fetch('/clear_history', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        // Clear UI elements
+                        document.getElementById('roast-controls').style.display = 'none';
+                        document.getElementById('continueBtn').style.display = 'none';
+                        document.getElementById('conversation-history').style.display = 'none';
+                        document.getElementById('history-container').innerHTML = '';
+                        
+                        // Clear current audio data
+                        currentAudioData = null;
+                        audioChunksForHistory = [];
+                        
+                        // Update status
+                        document.getElementById('status').textContent = '🗑️ Conversation history cleared';
+                        document.getElementById('status').className = 'status success';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error clearing history:', error);
+                });
+        }
+
+        // Socket event handlers
+        socket.on('status', function(data) {
+            const statusDiv = document.getElementById('status');
+            const recordBtn = document.getElementById('recordBtn');
+            const continueBtn = document.getElementById('continueBtn');
+            const mode = document.getElementById('mode').value;
+            
+            statusDiv.className = 'status';
+            
+            if (data.step === 'recording') {
+                statusDiv.className = 'status recording';
+                statusDiv.innerHTML = '<div class="spinner"></div>' + data.message;
+            } else if (data.step === 'complete') {
+                statusDiv.className = 'status success';
+                statusDiv.textContent = '✅ ' + data.message;
+                recordBtn.disabled = false;
+                
+                // Show controls only for conversation mode
+                if (mode === 'conversation') {
+                    continueBtn.style.display = 'block';
+                    continueBtn.disabled = false;
+                    document.getElementById('roast-controls').style.display = 'block';
+                    // Hide or show record button based on history presence
+                    checkHistoryStatus();
+                }
+            } else if (data.step.includes('complete')) {
+                statusDiv.className = 'status success';
+                statusDiv.textContent = '✅ ' + data.message;
+            } else {
+                statusDiv.className = 'status processing';
+                statusDiv.innerHTML = '<div class="spinner"></div>' + data.message;
+            }
+        });
+
+        socket.on('transcription', function(data) {
+            document.getElementById('transcription-text').textContent = data.text;
+            document.getElementById('transcription').classList.add('show');
+        });
+
+        socket.on('translation', function(data) {
+            document.getElementById('translation-text').textContent = data.text;
+            document.getElementById('translation').classList.add('show');
+        });
+
+        let audioChunksForHistory = []; // Collect audio chunks for history
+        let audioChunksForSave = []; // Collect audio chunks for saving
+
+        socket.on('audio_chunk', function(data) {
+            const audioContainer = document.getElementById('audio-container');
+            audioContainer.classList.add('show');
+            const statusEl = document.getElementById('audio-status');
+            statusEl.textContent = '🎙️ Live on stage...';
+            statusEl.classList.remove('is-laugh');
+            statusEl.classList.add('is-live');
+            
+            // Decode and play audio chunk immediately
+            const pcmData = base64ToArrayBuffer(data.data);
+            playAudioChunk(pcmData);
+            
+            // Collect chunks for saving (all modes)
+            audioChunksForSave.push(new Uint8Array(pcmData));
+            
+            // Collect chunks for history (only in conversation mode)
+            const mode = document.getElementById('mode').value;
+            if (mode === 'conversation') {
+                audioChunksForHistory.push(new Uint8Array(pcmData));
+            }
+        });
+
+        function scheduleHideIfDone() {
+            if (hideScheduled) return;
+            if (!ttsCompleted) return;
+            if (expectingLaugh && !laughPlayed) return;
+            const delayMs = audioContext ? Math.max(0, (nextStartTime - audioContext.currentTime) * 1000) + 100 : 300;
+            hideScheduled = true;
+            setTimeout(() => {
+                const audioContainer = document.getElementById('audio-container');
+                audioContainer.classList.remove('show');
+                const statusEl = document.getElementById('audio-status');
+                statusEl.textContent = '';
+            }, delayMs);
+        }
+
+        socket.on('audio_complete', function() {
+            const statusEl2 = document.getElementById('audio-status');
+            statusEl2.textContent = '✅ Encore finished!';
+            statusEl2.classList.remove('is-live');
+            ttsCompleted = true;
+            scheduleHideIfDone();
+            
+            // Show save button if we have audio
+            if (audioChunksForSave.length > 0) {
+                document.getElementById('saveAudioBtn').style.display = 'block';
+            }
+            
+            // Store collected audio for history (conversation mode only)
+            const mode = document.getElementById('mode').value;
+            if (mode === 'conversation' && audioChunksForHistory.length > 0) {
+                // Combine all chunks into a single array
+                let totalLength = 0;
+                audioChunksForHistory.forEach(chunk => totalLength += chunk.length);
+                
+                const combinedAudio = new Uint8Array(totalLength);
+                let offset = 0;
+                audioChunksForHistory.forEach(chunk => {
+                    combinedAudio.set(chunk, offset);
+                    offset += chunk.length;
+                });
+                
+                currentAudioData = combinedAudio;
+                audioChunksForHistory = []; // Reset for next exchange
+            }
+        });
+
+        socket.on('laugh_track', function(data) {
+            const statusEl3 = document.getElementById('audio-status');
+            statusEl3.textContent = '😂 Audience laughing...';
+            statusEl3.classList.remove('is-live');
+            statusEl3.classList.add('is-laugh');
+            
+            // Decode and play laugh track with its actual sample rate
+            const pcmData = base64ToArrayBuffer(data.data);
+            // const sampleRate = data.sample_rate || 24000;
+            const sampleRate = 96000;
+            playAudioChunk(pcmData, sampleRate);
+            laughPlayed = true;
+            scheduleHideIfDone();
+        });
+
+        socket.on('error', function(data) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.className = 'status error';
+            statusDiv.textContent = '❌ Error: ' + data.message;
+            document.getElementById('recordBtn').disabled = false;
+        });
+    </script>
+</body>
+</html>

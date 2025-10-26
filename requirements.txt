@@ -1,6 +1,7 @@
-dotenv==0.9.9
-numpy==2.3.4
-openai==2.6.1
-PyAudio==0.2.14
-python-dotenv==1.1.1
-tqdm==4.67.1
+Flask
+Flask-SocketIO
+python-socketio
+python-dotenv
+openai
+numpy
+pyaudio
