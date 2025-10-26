@@ -1,8 +1,8 @@
 {
-  "recording_number": 1,
+  "recording_number": 2,
   "model_type": "qwen",
-  "current_text": "You're talking about",
-  "conversation_history_length": 0,
+  "current_text": "The transcript of the speech is:  Ah, you're funny..",
+  "conversation_history_length": 2,
   "messages": [
     {
       "index": 0,
@@ -13,6 +13,16 @@
       "index": 1,
       "role": "user",
       "content": "You're talking about"
+    },
+    {
+      "index": 2,
+      "role": "assistant",
+      "content": "You're talking about *me*? Wow, I didn’t know my name was now a verb—must be the first time someone’s been roasted and also *replaced* by their own punchline."
+    },
+    {
+      "index": 3,
+      "role": "user",
+      "content": "The transcript of the speech is:  Ah, you're funny.."
     }
   ]
 }
