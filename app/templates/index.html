@@ -454,6 +454,8 @@
             }
             nextStartTime = 0;
             audioChunksForSave = []; // Clear saved audio chunks
+            userInputAudioChunks = []; // Clear user input audio chunks
+            laughTrackAudioChunks = []; // Clear laugh track audio chunks
             
             // Disable buttons
             recordBtn.disabled = true;
@@ -524,25 +526,77 @@
         let currentAudioData = null; // retained for potential logging
         function addToHistoryDisplay(userText, assistantText, audioData) {}
 
+        function resampleAudio(inputData, inputSampleRate, outputSampleRate) {
+            // Convert Uint8Array to Int16Array for proper audio processing
+            const inputSamples = new Int16Array(inputData.buffer);
+            const ratio = outputSampleRate / inputSampleRate;
+            const outputLength = Math.floor(inputSamples.length * ratio);
+            const outputSamples = new Int16Array(outputLength);
+            
+            // Linear interpolation resampling
+            for (let i = 0; i < outputLength; i++) {
+                const srcIndex = i / ratio;
+                const srcIndexFloor = Math.floor(srcIndex);
+                const srcIndexCeil = Math.min(srcIndexFloor + 1, inputSamples.length - 1);
+                const fraction = srcIndex - srcIndexFloor;
+                
+                const sample1 = inputSamples[srcIndexFloor] || 0;
+                const sample2 = inputSamples[srcIndexCeil] || 0;
+                
+                // Linear interpolation
+                outputSamples[i] = Math.round(sample1 + (sample2 - sample1) * fraction);
+            }
+            
+            // Convert back to Uint8Array
+            return new Uint8Array(outputSamples.buffer);
+        }
+
         function saveAudio() {
-            if (audioChunksForSave.length === 0) {
+            if (audioChunksForSave.length === 0 && userInputAudioChunks.length === 0) {
                 alert('No audio to save!');
                 return;
             }
             
+            // Target sample rate for final output
+            const targetSampleRate = 24000;
+            let allAudioChunks = [];
+            
+            // 1. Add user input audio (resample from 16kHz to 24kHz)
+            if (userInputAudioChunks.length > 0) {
+                userInputAudioChunks.forEach(audioObj => {
+                    const resampled = resampleAudio(audioObj.data, audioObj.sampleRate, targetSampleRate);
+                    allAudioChunks.push(resampled);
+                });
+                
+                // Add a small silence gap (0.5 seconds at 24kHz, 16-bit stereo)
+                const silenceGap = new Uint8Array(targetSampleRate * 2); // 2 bytes per sample
+                allAudioChunks.push(silenceGap);
+            }
+            
+            // 2. Add TTS response audio (already 24kHz)
+            audioChunksForSave.forEach(chunk => allAudioChunks.push(chunk));
+            
+            // 3. Add laugh track audio if present (resample from 96kHz to 24kHz)
+            if (laughTrackAudioChunks.length > 0) {
+                laughTrackAudioChunks.forEach(chunk => {
+                    const resampled = resampleAudio(chunk, 96000, targetSampleRate);
+                    allAudioChunks.push(resampled);
+                });
+            }
+            
             // Combine all chunks into a single array
             let totalLength = 0;
-            audioChunksForSave.forEach(chunk => totalLength += chunk.length);
+            allAudioChunks.forEach(chunk => totalLength += chunk.length);
             
             const combinedAudio = new Uint8Array(totalLength);
             let offset = 0;
-            audioChunksForSave.forEach(chunk => {
+            allAudioChunks.forEach(chunk => {
                 combinedAudio.set(chunk, offset);
                 offset += chunk.length;
             });
             
             // Convert PCM to WAV format
-            const wavBlob = createWavBlob(combinedAudio, 24000); // 24kHz sample rate
+            const wavBlob = createWavBlob(combinedAudio, targetSampleRate);
             
             // Create download link
             const url = URL.createObjectURL(wavBlob);
@@ -638,8 +692,19 @@
             document.getElementById('translation').classList.add('show');
         });
 
+        socket.on('user_audio', function(data) {
+            // Store user input audio for saving with sample rate info
+            const pcmData = base64ToArrayBuffer(data.data);
+            userInputAudioChunks.push({
+                data: new Uint8Array(pcmData),
+                sampleRate: data.sample_rate || 16000
+            });
+        });
+
         let audioChunksForHistory = []; // Collect audio chunks for history
         let audioChunksForSave = []; // Collect audio chunks for saving
+        let userInputAudioChunks = []; // Collect user input audio for saving
+        let laughTrackAudioChunks = []; // Collect laugh track audio for saving
 
         socket.on('audio_chunk', function(data) {
             const audioContainer = document.getElementById('audio-container');
@@ -719,6 +784,10 @@
             // const sampleRate = data.sample_rate || 24000;
             const sampleRate = 96000;
             playAudioChunk(pcmData, sampleRate);
+            
+            // Store laugh track audio for saving
+            laughTrackAudioChunks.push(new Uint8Array(pcmData));
+            
             laughPlayed = true;
             scheduleHideIfDone();
         });
