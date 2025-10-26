@@ -36,7 +36,7 @@ from app.services.audio import (
 # Load environment variables
 load_dotenv()
 
-app = Flask(__name__, template_folder="app/templates")
+app = Flask(__name__, template_folder="app/templates", static_folder="app/static")
 app.config['SECRET_KEY'] = 'higgs-audio-secret-key'
 socketio = SocketIO(app, cors_allowed_origins="*")
 
@@ -168,8 +168,8 @@ def handle_recording(data):
         emit('translation', {'text': emotional_text})
         emit('status', {'step': 'translation_complete', 'message': 'Translation complete!'})
 
-        # Step 4: TTS - Stream audio chunks in real-time
-        emit('status', {'step': 'generating_audio', 'message': 'Generating emotional speech...'})
+        # Step 4: Generate and stream audio in real time
+        emit('status', {'step': 'generating_audio', 'message': '🎶 Cooking up the audio performance…'})
         
         # NEW: Enhanced TTS logic from streaming script
         
