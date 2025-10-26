@@ -129,6 +129,8 @@
         </div>
 
         <div class="footer">
+            © Mildly Amusing Inc. 2025
+            <br>
             Powered by Higgs Audio & Boson AI
         </div>
     </div>
@@ -306,10 +308,51 @@
             img.src = MODE_AVATARS[mode] || MODE_AVATARS.conversation;
         }
 
-        // Provide a safe applyTheme implementation to avoid ReferenceErrors
-        // If you later add themed styles, extend this to toggle classes or CSS variables.
+        // Per‑mode theme variables (tweak to taste)
+        const THEME_VARS = {
+            angry: {
+                '--bg1': '#3a0f13',
+                '--bg2': '#5a1b1b',
+                '--primary': '#ff6b6b',
+                '--accent': '#ff3b3b',
+                '--accent-2': '#ff9f43',
+                '--accent-3': '#ff8e53',
+                '--ink': '#1f2937'
+            },
+            sarcastic: {
+                '--bg1': '#1b1a27',
+                '--bg2': '#2a2740',
+                '--primary': '#8a7dff',
+                '--accent': '#6b5eff',
+                '--accent-2': '#4ecdc4',
+                '--accent-3': '#7f7cff',
+                '--ink': '#1f2937'
+            },
+            roast: {
+                '--bg1': '#2b1430',
+                '--bg2': '#5a1b4d',
+                '--primary': '#ff6bd6',
+                '--accent': '#ff6b6b',
+                '--accent-2': '#ffaf5f',
+                '--accent-3': '#ff8e53',
+                '--ink': '#1f2937'
+            },
+            conversation: {
+                '--bg1': '#102a43',
+                '--bg2': '#1f4e5f',
+                '--primary': '#4ecdc4',
+                '--accent': '#2bb6a8',
+                '--accent-2': '#667eea',
+                '--accent-3': '#4ecdc4',
+                '--ink': '#112133'
+            }
+        };
         function applyTheme(mode) {
-            // no-op for now; reserved for future theming per mode
+            const vars = THEME_VARS[mode] || THEME_VARS.sarcastic;
+            const root = document.documentElement;
+            for (const k in vars) {
+                root.style.setProperty(k, vars[k]);
+            }
         }
 
         function updateModeDescription(mode) {
