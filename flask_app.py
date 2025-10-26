@@ -176,6 +176,7 @@ def handle_recording(data):
         duration = float(data.get('duration', 5.0))
         language = data.get('language', 'english')  # NEW: Language support
         voice = data.get('voice', 'keegan')  # NEW: Voice selection support
+        laugh_track_enabled = data.get('laughTrack', True)  # NEW: Laugh track toggle
         
         # Load mode configuration (for emotion translation) - NEW: Using streaming script logic
         try:
@@ -325,13 +326,14 @@ def handle_recording(data):
                 import traceback
                 traceback.print_exc()
         
-        # Step 5: Send laugh track
-        emit('status', {'step': 'laugh_track', 'message': 'Adding laugh track...'})
-        laugh_pcm, laugh_rate = load_wav_file_as_pcm(LAUGH_TRACK_PATH, volume=0.25)  # NEW: Use LAUGH_TRACK_PATH
-        if laugh_pcm:
-            # Send laugh track as base64 with sample rate
-            laugh_b64 = base64.b64encode(laugh_pcm).decode('utf-8')
-            emit('laugh_track', {'data': laugh_b64, 'sample_rate': laugh_rate})
+        # Step 5: Send laugh track (only if enabled)
+        if laugh_track_enabled:
+            emit('status', {'step': 'laugh_track', 'message': 'Adding laugh track...'})
+            laugh_pcm, laugh_rate = load_wav_file_as_pcm(LAUGH_TRACK_PATH, volume=0.25)  # NEW: Use LAUGH_TRACK_PATH
+            if laugh_pcm:
+                # Send laugh track as base64 with sample rate
+                laugh_b64 = base64.b64encode(laugh_pcm).decode('utf-8')
+                emit('laugh_track', {'data': laugh_b64, 'sample_rate': laugh_rate})
         
         # Step 6: Save combined audio for roast mode - ENHANCED: From streaming script
         if is_roast_mode:

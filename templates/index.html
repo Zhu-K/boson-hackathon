@@ -122,6 +122,45 @@
             box-shadow: 0 10px 20px rgba(78, 205, 196, 0.4);
         }
 
+        #saveAudioBtn {
+            background: linear-gradient(135deg, #FF6B6B 0%, #FF8E53 100%);
+            margin-top: 10px;
+            display: none;
+        }
+
+        #saveAudioBtn:hover:not(:disabled) {
+            box-shadow: 0 10px 20px rgba(255, 107, 107, 0.4);
+        }
+
+        .checkbox-container {
+            text-align: center;
+            margin: 15px 0;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            display: inline-block;
+            width: auto;
+            min-width: 200px;
+        }
+
+        .checkbox-label {
+            display: inline-flex;
+            align-items: center;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: 500;
+            color: #333;
+            user-select: none;
+        }
+
+        .checkbox-label input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            margin-right: 10px;
+            cursor: pointer;
+            accent-color: #667eea;
+        }
+
         #conversation-history {
             margin: 20px 0;
             max-height: 400px;
@@ -301,8 +340,18 @@
             </div>
         </div>
 
+        <div style="text-align: center; margin: 15px 0;">
+            <div class="checkbox-container">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="laughTrack" checked>
+                    <span>Laugh Track</span>
+                </label>
+            </div>
+        </div>
+
         <button id="recordBtn" onclick="startRecording()">🎙️ Start Recording</button>
         <button id="continueBtn" onclick="continueConversation()" style="display: none;">🔄 Continue Conversation</button>
+        <button id="saveAudioBtn" onclick="saveAudio()">💾 Save Audio</button>
         
         <div id="roast-controls" style="display: none; text-align: center; margin: 10px 0;">
             <div id="history-indicator" style="color: #4ECDC4; font-size: 0.9em; margin-bottom: 10px;">
@@ -381,10 +430,24 @@
             }
         }
 
+        // Mode to default voice mapping
+        const modeVoiceDefaults = {
+            'angry': 'keegan',
+            'sarcastic': 'stephen',
+            'roast': 'ricky'
+        };
+
         // Handle mode changes
         document.getElementById('mode').addEventListener('change', function() {
             const roastControls = document.getElementById('roast-controls');
             const continueBtn = document.getElementById('continueBtn');
+            const voiceSelect = document.getElementById('voice');
+            
+            // Set default voice for the selected mode
+            const defaultVoice = modeVoiceDefaults[this.value];
+            if (defaultVoice) {
+                voiceSelect.value = defaultVoice;
+            }
             
             if (this.value === 'roast') {
                 checkHistoryStatus();
@@ -395,8 +458,15 @@
             }
         });
 
-        // Check history status on page load
+        // Check history status on page load and set initial voice
         document.addEventListener('DOMContentLoaded', function() {
+            // Set initial voice based on default mode (angry)
+            const initialMode = document.getElementById('mode').value;
+            const initialVoice = modeVoiceDefaults[initialMode];
+            if (initialVoice) {
+                document.getElementById('voice').value = initialVoice;
+            }
+            
             checkHistoryStatus();
         });
 
@@ -492,6 +562,7 @@
             const voice = document.getElementById('voice').value;
             const language = document.getElementById('language').value;
             const duration = parseFloat(document.getElementById('duration').value);
+            const laughTrack = document.getElementById('laughTrack').checked;
             const recordBtn = document.getElementById('recordBtn');
             const continueBtn = document.getElementById('continueBtn');
             
@@ -499,6 +570,7 @@
             document.getElementById('transcription').classList.remove('show');
             document.getElementById('translation').classList.remove('show');
             document.getElementById('audio-container').classList.remove('show');
+            document.getElementById('saveAudioBtn').style.display = 'none';
             
             // Reset audio
             if (audioContext) {
@@ -506,18 +578,22 @@
                 audioContext = null;
             }
             nextStartTime = 0;
+            audioChunksForSave = []; // Clear saved audio chunks
             
             // Disable buttons
             recordBtn.disabled = true;
             continueBtn.style.display = 'none';
             
             // Emit recording event
-            socket.emit('start_recording', { mode: mode, voice: voice, language: language, duration: duration });
+            socket.emit('start_recording', { mode: mode, voice: voice, language: language, duration: duration, laughTrack: laughTrack });
         }
 
         function continueConversation() {
             const mode = document.getElementById('mode').value;
+            const voice = document.getElementById('voice').value;
+            const language = document.getElementById('language').value;
             const duration = parseFloat(document.getElementById('duration').value);
+            const laughTrack = document.getElementById('laughTrack').checked;
             const recordBtn = document.getElementById('recordBtn');
             const continueBtn = document.getElementById('continueBtn');
             
@@ -545,7 +621,7 @@
             continueBtn.style.display = 'none';
             
             // Emit recording event
-            socket.emit('start_recording', { mode: mode, voice: voice, language: language, duration: duration });
+            socket.emit('start_recording', { mode: mode, voice: voice, language: language, duration: duration, laughTrack: laughTrack });
         }
 
         function moveCurrentToHistory() {
@@ -611,6 +687,50 @@
             
             // Scroll to bottom of history
             conversationHistory.scrollTop = conversationHistory.scrollHeight;
+        }
+
+        function saveAudio() {
+            if (audioChunksForSave.length === 0) {
+                alert('No audio to save!');
+                return;
+            }
+            
+            // Combine all chunks into a single array
+            let totalLength = 0;
+            audioChunksForSave.forEach(chunk => totalLength += chunk.length);
+            
+            const combinedAudio = new Uint8Array(totalLength);
+            let offset = 0;
+            audioChunksForSave.forEach(chunk => {
+                combinedAudio.set(chunk, offset);
+                offset += chunk.length;
+            });
+            
+            // Convert PCM to WAV format
+            const wavBlob = createWavBlob(combinedAudio, 24000); // 24kHz sample rate
+            
+            // Create download link
+            const url = URL.createObjectURL(wavBlob);
+            const a = document.createElement('a');
+            a.href = url;
+            
+            // Generate filename with timestamp
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+            const mode = document.getElementById('mode').value;
+            a.download = `higgs-audio-${mode}-${timestamp}.wav`;
+            
+            // Trigger download
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            
+            // Clean up
+            URL.revokeObjectURL(url);
+            
+            // Show success message
+            const statusDiv = document.getElementById('status');
+            statusDiv.className = 'status success';
+            statusDiv.textContent = '💾 Audio saved successfully!';
         }
 
         function clearHistory() {
@@ -681,6 +801,7 @@
         });
 
         let audioChunksForHistory = []; // Collect audio chunks for history
+        let audioChunksForSave = []; // Collect audio chunks for saving
 
         socket.on('audio_chunk', function(data) {
             const audioContainer = document.getElementById('audio-container');
@@ -691,6 +812,9 @@
             const pcmData = base64ToArrayBuffer(data.data);
             playAudioChunk(pcmData);
             
+            // Collect chunks for saving (all modes)
+            audioChunksForSave.push(new Uint8Array(pcmData));
+            
             // Collect chunks for history (only in roast mode)
             const mode = document.getElementById('mode').value;
             if (mode === 'roast') {
@@ -700,6 +824,11 @@
 
         socket.on('audio_complete', function() {
             document.getElementById('audio-status').textContent = '✅ Audio playback complete!';
+            
+            // Show save button if we have audio
+            if (audioChunksForSave.length > 0) {
+                document.getElementById('saveAudioBtn').style.display = 'block';
+            }
             
             // Store collected audio for history (roast mode only)
             const mode = document.getElementById('mode').value;
