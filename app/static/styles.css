@@ -58,7 +58,8 @@ h1 {
     /* Ensure Mode, Voice, Language, and Laugh Track appear on the same row on desktop */
     grid-template-columns: repeat(4, 1fr);
     gap: 20px;
-    margin-bottom: 30px;
+    /* Slightly tighter spacing above the description bubble */
+    margin-bottom: 20px;
 }
 
 @media (max-width: 768px) {
@@ -159,6 +160,33 @@ audio { width: 100%; margin-top: 10px; }
 /* Chips */
 .chip { display: inline-block; padding: 6px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
 .chip-info { background: rgba(138,125,255,0.12); color: #4b4bbf; border: 1px solid rgba(138,125,255,0.25); }
+
+/* Mode description chat bubble (uses themed variables) */
+.mode-description-bubble {
+    width: 100%;
+    /* Reduce spacing with controls above */
+    margin: 2px 0 16px 0;
+    background: var(--bubble-bg, rgba(138,125,255,1));
+    border: 1px solid rgba(0,0,0,0.06);
+    /* Removed bold left border per request */
+    border-radius: 14px;
+    color: var(--bubble-text, var(--ink));
+    padding: 12px 14px 12px 14px;
+    box-shadow: 0 10px 24px rgba(0,0,0,0.06);
+    position: relative;
+    font-weight: 600;
+}
+.mode-description-bubble::after {
+    content: "";
+    position: absolute;
+    top: -8px;
+    left: 24px;
+    width: 0; height: 0;
+    border-left: 10px solid transparent;
+    border-right: 10px solid transparent;
+    border-bottom: 10px solid var(--bubble-bg, rgba(138,125,255,0.12));
+    filter: drop-shadow(0 -1px 0 rgba(0,0,0,0.06));
+}
 
 /* Toggle switch */
 .switch { position: relative; display: inline-block; width: 54px; height: 30px; }

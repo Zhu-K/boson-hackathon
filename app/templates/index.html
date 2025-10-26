@@ -22,7 +22,6 @@
                     <option value="roast">Roast</option>
                     <option value="conversation">Conversation</option>
                 </select>
-                <div id="mode-description" class="chip chip-info" style="margin-top: 6px;"></div>
             </div>
 
             <div class="control-group">
@@ -59,6 +58,9 @@
             </div>
 
         </div>
+
+        <!-- Full-width mode description bubble -->
+        <div id="mode-description" class="mode-description-bubble"></div>
 
 
         <details style="margin: 15px 0; padding: 10px; background: #f8f9fa; border-radius: 8px;">
@@ -317,7 +319,9 @@
                 '--accent': '#ff3b3b',
                 '--accent-2': '#ff9f43',
                 '--accent-3': '#ff8e53',
-                '--ink': '#1f2937'
+                '--ink': '#1f2937',
+                '--bubble-bg': 'rgba(255, 210, 210, 1)',
+                '--bubble-text': '#aa5f43'
             },
             sarcastic: {
                 '--bg1': '#1b1a27',
@@ -326,7 +330,9 @@
                 '--accent': '#6b5eff',
                 '--accent-2': '#4ecdc4',
                 '--accent-3': '#7f7cff',
-                '--ink': '#1f2937'
+                '--ink': '#1f2937',
+                '--bubble-bg': 'rgba(200, 225, 255, 1)',
+                '--bubble-text': '#5f69a7'
             },
             roast: {
                 '--bg1': '#2b1430',
@@ -335,7 +341,9 @@
                 '--accent': '#ff6b6b',
                 '--accent-2': '#ffaf5f',
                 '--accent-3': '#ff8e53',
-                '--ink': '#1f2937'
+                '--ink': '#1f2937',
+                '--bubble-bg': 'rgba(255, 190, 224, 1)',
+                '--bubble-text': '#ab54b0'
             },
             conversation: {
                 '--bg1': '#102a43',
@@ -344,7 +352,9 @@
                 '--accent': '#2bb6a8',
                 '--accent-2': '#667eea',
                 '--accent-3': '#4ecdc4',
-                '--ink': '#112133'
+                '--ink': '#112133',
+                '--bubble-bg': 'rgba(190, 255, 220, 1)',
+                '--bubble-text': '#4f8aa5'
             }
         };
         function applyTheme(mode) {
