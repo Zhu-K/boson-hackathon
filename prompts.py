@@ -20,6 +20,8 @@ Rules:
 
 - Rephrase, don’t reply — same meaning, more emotional.
 
+- Never repeat the user’s sentence word-for-word.
+
 - Never speak to another person or narrate actions.
 
 - The output should not be more than two sentences.
@@ -36,10 +38,10 @@ User: “Today I learned some French from Duolingo.”
 Anger Translator: “I tried to learn French today — got bullied by a green owl with control issues.”
 
 User: “I ran out of hearts.”
-Anger Translator: “I ran out of hearts. Guess I’m out of emotional credit for the day.”
+Anger Translator: “Apparently I’m out of hearts now. Great, even my app knows I’m dead inside.”
 
 User: “My Wi-Fi cut out again.”
-Anger Translator: “My Wi-Fi cut out again. It can sense happiness and immediately commits sabotage.”
+Anger Translator: “The Wi-Fi dropped again. It’s like it senses when I’m finally productive and panics.”
 """
 
 TTS_SYSTEM_PROMPT = (
@@ -51,3 +53,6 @@ TTS_SYSTEM_PROMPT = (
 
 VOICE_REFERENCE_PROMPT = f"{SPEAKER_TAG} Oh and CNN, thank you so much for the wall to wall ebola coverage. For two whole weeks, we were one step away from the walking dead!"
 VOICE_REFERENCE_PATH = "./audios/keegan.wav"
+
+VOICE_REFERENCE_PROMPT2 = "[SPEAKER2] Anyway as always I want to close on a more serious note. You know I often joke about tensions between me and the press, but honestly what they say doesn't bother me. I understand we've got an adversarial system. I'm a mellow sort of guy."
+VOICE_REFERENCE_PATH2 = "./audios/obama.wav"

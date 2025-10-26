@@ -12,6 +12,16 @@ from dotenv import load_dotenv
 from openai import OpenAI
 import threading
 
+# Import roast conversation functions
+from roast_conversation import (
+    save_audio_to_history,
+    add_to_conversation_history,
+    translate_emotion_with_history,
+    clear_conversation_history,
+    save_combined_conversation_audio,
+    increment_recording_counter
+)
+
 # Load environment variables
 load_dotenv()
 
@@ -190,6 +200,8 @@ def tts_generate_streaming(client: OpenAI, text: str, tts_prompt: str, voice_ref
     )
 
 
+
+
 def record_microphone_segment(duration: float = 5.0, rate: int = 16_000, chunk_size: int = 1024) -> bytes:
     """Record audio from the microphone for a fixed duration."""
     p = pyaudio.PyAudio()
@@ -237,10 +249,30 @@ def load_wav_file_as_pcm(path: str, target_rate: int = 24_000, volume: float = 0
         return scaled.tobytes(), sample_rate
 
 
+
+
 @app.route('/')
 def index():
     """Render the main page."""
     return render_template('index.html')
+
+
+@app.route('/clear_history', methods=['POST'])
+def clear_history():
+    """Clear conversation history for roast mode."""
+    clear_conversation_history()
+    return jsonify({'status': 'success', 'message': 'Conversation history cleared'})
+
+
+@app.route('/history_status', methods=['GET'])
+def history_status():
+    """Get conversation history status."""
+    from roast_conversation import get_conversation_history_length
+    history_length = get_conversation_history_length()
+    return jsonify({
+        'has_history': history_length > 0,
+        'history_length': history_length
+    })
 
 
 @socketio.on('start_recording')
@@ -252,17 +284,31 @@ def handle_recording(data):
         duration = float(data.get('duration', 5.0))
         language = data.get('language', 'english')
         
-        # Load appropriate prompts for emotion mode
+        # Increment recording counter for roast mode
+        if mode == "roast":
+            increment_recording_counter()
+        
+        # Load appropriate prompts
         if mode == "angry":
-            from prompts import TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT
+            from prompts import TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT, VOICE_REFERENCE_PROMPT, VOICE_REFERENCE_PATH
+            laugh_track = "./audios/sitcom_laugh_track.wav"
         elif mode == "sarcastic":
-            from prompts_sarcastic import TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT
-        else:  # roast mode
+            from prompts_sarcastic import TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT, VOICE_REFERENCE_PROMPT, VOICE_REFERENCE_PATH
+            laugh_track = "./audios/sitcom_laugh_track.wav"
+        elif mode == "roast":
+            from prompts_heckle import TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT, VOICE_REFERENCE_PROMPT, VOICE_REFERENCE_PATH
+            laugh_track = "./audios/sitcom_laugh_track.wav"
+        else:
             from prompts_roast import TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT
-        
-        # Inject language instruction if Mandarin is selected
-        TRANSLATOR_SYSTEM_PROMPT = inject_language_instruction(TRANSLATOR_SYSTEM_PROMPT, language)
-        
+    
+            # Inject language instruction if Mandarin is selected
+            TRANSLATOR_SYSTEM_PROMPT = inject_language_instruction(TRANSLATOR_SYSTEM_PROMPT, language)
+
+        # Initialize client
+        global client
+        if client is None:
+            client = get_client()
+
         # Step 1: Record
         emit('status', {'step': 'recording', 'message': f'Recording for {duration} seconds...'})
         audio_bytes = record_microphone_segment(duration=duration)
@@ -295,16 +341,27 @@ def handle_recording(data):
 
         # Step 3: Translate
         emit('status', {'step': 'translating', 'message': f'Translating to {mode} mode...'})
-        emotional_text = translate_emotion(client, captured_speech, TRANSLATOR_SYSTEM_PROMPT)
+        
+        # Use conversation-aware translation for roast mode
+        if mode == "roast":
+            emotional_text = translate_emotion_with_history(client, captured_speech, TRANSLATOR_SYSTEM_PROMPT)
+        else:
+            emotional_text = translate_emotion(client, captured_speech, TRANSLATOR_SYSTEM_PROMPT)
+            
         emit('translation', {'text': emotional_text})
         emit('status', {'step': 'translation_complete', 'message': 'Translation complete!'})
 
         # Step 4: TTS - Stream audio chunks in real-time
         emit('status', {'step': 'generating_audio', 'message': 'Generating emotional speech...'})
+        
+        # Use TTS generation (same for all modes, no conversation history needed for TTS)
         stream_iter = tts_generate_streaming(
             client, emotional_text,
             TTS_SYSTEM_PROMPT, voice_reference
         )
+        
+        # Collect audio chunks for saving (roast mode only)
+        assistant_audio_chunks = []
         
         # Stream audio chunks to client
         for chunk in stream_iter:
@@ -318,8 +375,29 @@ def handle_recording(data):
             
             # Send audio chunk to client
             emit('audio_chunk', {'data': b64_data})
+            
+            # Collect chunks for roast mode history
+            if mode == "roast":
+                assistant_audio_chunks.append(base64.b64decode(b64_data))
         
         emit('audio_complete', {})
+        
+        # Save conversation to history for roast mode
+        if mode == "roast":
+            try:
+                # First add user input to history
+                user_audio_path = save_audio_to_history(audio_bytes, captured_speech, is_user=True)
+                add_to_conversation_history(captured_speech, user_audio_path, is_user=True)
+                
+                # Then add assistant response to history
+                if assistant_audio_chunks:
+                    assistant_pcm = b"".join(assistant_audio_chunks)
+                    assistant_audio_path = save_audio_to_history(assistant_pcm, emotional_text, is_user=False)
+                    add_to_conversation_history(emotional_text, assistant_audio_path, is_user=False)
+            except Exception as e:
+                print(f"ERROR: Failed to save conversation to history: {e}")
+                import traceback
+                traceback.print_exc()
         
         # Step 5: Send laugh track
         emit('status', {'step': 'laugh_track', 'message': 'Adding laugh track...'})
@@ -328,6 +406,20 @@ def handle_recording(data):
             # Send laugh track as base64 with sample rate
             laugh_b64 = base64.b64encode(laugh_pcm).decode('utf-8')
             emit('laugh_track', {'data': laugh_b64, 'sample_rate': laugh_rate})
+        
+        # Step 6: Save combined audio for roast mode
+        if mode == "roast":
+            try:
+                emit('status', {'step': 'saving_combined', 'message': 'Saving combined audio...'})
+                assistant_pcm = b"".join(assistant_audio_chunks) if assistant_audio_chunks else b""
+                combined_path = save_combined_conversation_audio(
+                    audio_bytes, assistant_pcm, laugh_pcm
+                )
+                print(f"Combined audio saved to: {combined_path}")
+            except Exception as e:
+                print(f"ERROR: Failed to save combined audio: {e}")
+                import traceback
+                traceback.print_exc()
         
         emit('status', {'step': 'complete', 'message': 'All done!'})
 

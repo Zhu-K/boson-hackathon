@@ -150,7 +150,7 @@ def record_microphone_segment(threshold: float = 1500.0, rate: int = 16_000,
         channels=1,
         rate=rate,
         input=True,
-        input_device_index=1,
+        input_device_index=2,
         frames_per_buffer=chunk_size,
     )
 
