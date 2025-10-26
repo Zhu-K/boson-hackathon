@@ -3,14 +3,11 @@ Roast mode conversation management.
 Handles conversation history, audio processing, and model prompt generation.
 """
 
-import base64
-import io
 import json
 import os
-import time
 from collections import deque
-from typing import Dict, Iterator, List
-import re 
+from typing import Dict, List
+import re
 from openai import OpenAI
 
 # Global state
@@ -22,10 +19,7 @@ recording_counter = 0
 # UTILITY FUNCTIONS
 # =============================================================================
 
-def _b64_encode_file(path: str) -> str:
-    """Encode file to base64."""
-    with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode("utf-8")
+# Removed unused _b64_encode_file helper
 
 
 # Removed WAV/PCM utilities; no longer saving audio files server-side.

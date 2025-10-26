@@ -356,6 +356,13 @@
         <details style="margin: 15px 0; padding: 10px; background: #f8f9fa; border-radius: 8px;">
             <summary style="cursor: pointer; font-weight: 600; color: #667eea;">⚙️ Advanced Recording Settings</summary>
             <div style="margin-top: 15px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div class="control-group" id="input-device-group">
+                    <label for="inputDevice">🎙️ Input Device</label>
+                    <select id="inputDevice">
+                        <option value="0">Default microphone</option>
+                    </select>
+                    <div class="slider-value" id="inputDevice-hint" style="display:block; color:#777;">Select your microphone</div>
+                </div>
                 <div class="control-group">
                     <label for="silenceTolerance">Silence Timeout</label>
                     <input type="range" id="silenceTolerance" min="1" max="5" step="0.5" value="1">
@@ -491,6 +498,51 @@
             updateModeDescription(this.value);
         });
 
+        // Load audio input devices
+        function loadAudioDevices() {
+            fetch('/devices')
+                .then(r => r.json())
+                .then(data => {
+                    const sel = document.getElementById('inputDevice');
+                    if (!sel) return;
+                    sel.innerHTML = '';
+                    if (data && Array.isArray(data.devices) && data.devices.length > 0) {
+                        const defIdx = (data.default_index !== undefined && data.default_index !== null)
+                            ? String(data.default_index) : null;
+                        data.devices.forEach(dev => {
+                            const opt = document.createElement('option');
+                            const idxStr = String(dev.index);
+                            opt.value = idxStr;
+                            if (defIdx !== null && idxStr === defIdx) {
+                                opt.textContent = `*** ${dev.name} (DEFAULT)`;
+                                opt.selected = true;
+                            } else {
+                                opt.textContent = dev.name;
+                            }
+                            sel.appendChild(opt);
+                        });
+                        // Ensure default is selected if present
+                        if (defIdx !== null) sel.value = defIdx;
+                    } else {
+                        const opt = document.createElement('option');
+                        opt.value = '0';
+                        opt.textContent = '*** Default microphone (DEFAULT)';
+                        sel.appendChild(opt);
+                        const hint = document.getElementById('inputDevice-hint');
+                        if (hint) hint.textContent = 'No device list available; using system default';
+                    }
+                })
+                .catch(() => {
+                    const sel = document.getElementById('inputDevice');
+                    if (!sel) return;
+                    sel.innerHTML = '';
+                    const opt = document.createElement('option');
+                    opt.value = '0';
+                    opt.textContent = '*** Default microphone (DEFAULT)';
+                    sel.appendChild(opt);
+                });
+        }
+
         // Check history status on page load and set initial voice
         document.addEventListener('DOMContentLoaded', function() {
             // Set initial voice based on default mode (angry)
@@ -501,6 +553,7 @@
             }
             
             checkHistoryStatus();
+            loadAudioDevices();
             updateModeDescription(initialMode);
         });
 
@@ -660,6 +713,7 @@
                 voice: voice, 
                 language: language, 
                 laughTrack: laughTrack,
+                inputDeviceIndex: document.getElementById('inputDevice') ? document.getElementById('inputDevice').value : 0,
                 silenceTolerance: silenceTolerance,
                 maxDuration: maxDuration
             });
@@ -705,6 +759,7 @@
                 voice: voice, 
                 language: language, 
                 laughTrack: laughTrack,
+                inputDeviceIndex: document.getElementById('inputDevice') ? document.getElementById('inputDevice').value : 0,
                 silenceTolerance: silenceTolerance,
                 maxDuration: maxDuration
             });

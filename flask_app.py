@@ -1,16 +1,12 @@
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
 import base64
-import io
 import os
 import wave
-import time
-from typing import Iterator
 import numpy as np
 import pyaudio
 from dotenv import load_dotenv
 from openai import OpenAI
-import threading
 
 # Import roast conversation functions
 from roast_conversation import (
@@ -26,7 +22,6 @@ from streaming_tts_script_with_listen_ars import (
     translate_emotion,
     transcribe_audio,
     tts_generate_streaming as streaming_tts_generate,
-    VoiceReference,
     load_mode_config,
     load_voice_config,
     VOICE_CONFIG,
@@ -52,17 +47,7 @@ def get_client() -> OpenAI:
     return OpenAI(api_key=api_key, base_url="https://hackathon.boson.ai/v1")
 
 
-def b64(path: str) -> str:
-    """Encode file to base64."""
-    with open(path, "rb") as fh:
-        return base64.b64encode(fh.read()).decode("utf-8")
-
-
-def tts_generate_streaming(client: OpenAI, text: str, tts_prompt: str, voice_prompt: str, ref_path: str) -> Iterator:
-    """Wrapper function to use streaming script's TTS with prompt saving for roast mode."""
-    voice_ref = VoiceReference(ref_path, voice_prompt)
-    # Always save prompts in Flask app (since it's primarily used for roast mode)
-    return streaming_tts_generate(client, text, tts_prompt, voice_ref, save_prompt=True)
+# Removed unused local helpers (b64 and TTS wrapper)
 
 
 def record_microphone_segment(
@@ -218,6 +203,35 @@ def history_status():
     })
 
 
+@app.route('/devices', methods=['GET'])
+def list_audio_devices():
+    """Return available input audio devices and the default device index."""
+    devices = []
+    default_index = None
+    try:
+        p = pyaudio.PyAudio()
+        try:
+            default_index = p.get_default_input_device_info().get('index')
+        except Exception:
+            default_index = None
+        for i in range(p.get_device_count()):
+            info = p.get_device_info_by_index(i)
+            if info.get('maxInputChannels', 0) > 0:
+                devices.append({
+                    'index': i,
+                    'name': info.get('name', f'Device {i}'),
+                    'channels': info.get('maxInputChannels', 0)
+                })
+    except Exception as e:
+        return jsonify({'devices': [], 'default_index': default_index, 'error': str(e)}), 200
+    finally:
+        try:
+            p.terminate()
+        except Exception:
+            pass
+    return jsonify({'devices': devices, 'default_index': default_index})
+
+
 @socketio.on('start_recording')
 def handle_recording(data):
     """Handle audio recording and processing."""
@@ -261,11 +275,13 @@ def handle_recording(data):
             print(f"💬 Found {history_length} previous messages in conversation history")
 
         # Step 1: Record with voice activity detection
+        input_device_index = data.get('inputDeviceIndex', 0)
         audio_bytes = record_microphone_segment(
             threshold=threshold,
             silence_tolerance=silence_tolerance,
             max_duration=max_duration,
-            emit_callback=emit
+            emit_callback=emit,
+            input_device_index=int(input_device_index) if isinstance(input_device_index, (int, str)) and str(input_device_index).isdigit() else 0
         )
         emit('status', {'step': 'recording_complete', 'message': 'Recording complete!'})
 
