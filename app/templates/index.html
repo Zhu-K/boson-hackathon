@@ -9,6 +9,7 @@
 </head>
 <body>
     <div class="container">
+        <img id="mode-avatar" class="mode-avatar" src="{{ url_for('static', filename='key.png') }}" alt="mode avatar" />
         <h1>🎤 Pocket Comedian</h1>
         <p class="subtitle">A tiny AI that turns whatever you say into a punchline.</p>
 
@@ -134,6 +135,7 @@
 
     <script>
         const socket = io();
+        const STATIC_BASE = "{{ url_for('static', filename='') }}";
         let audioContext;
         let nextStartTime = 0;
         let ttsCompleted = false;
@@ -213,9 +215,10 @@
                 continueBtn.style.display = 'none';
                 if (recordBtn) recordBtn.style.display = 'inline-block';
             }
-            // Update mode description and theme
+            // Update mode description, theme, and avatar
             updateModeDescription(this.value);
             applyTheme(this.value);
+            updateAvatar(this.value);
         });
 
         // Load audio input devices
@@ -275,7 +278,11 @@
             checkHistoryStatus();
             loadAudioDevices();
             updateModeDescription(initialMode);
-            applyTheme(initialMode);
+            // Ensure theme function exists so later calls don't break execution
+            if (typeof applyTheme === 'function') {
+                applyTheme(initialMode);
+            }
+            updateAvatar(initialMode);
         });
 
         // Mode descriptions
@@ -286,21 +293,23 @@
             conversation: 'Friendly, quick‑witted banter over multiple turns.'
         };
 
-        // Theming per mode
-        const MODE_THEMES = {
-            angry:  { bg1: '#2a1a1a', bg2: '#3e1f1f', primary: '#ff7b7b', accent: '#ff6b6b', accent2: '#f5a623' },
-            sarcastic: { bg1: '#1a1f2a', bg2: '#23293a', primary: '#8a7dff', accent: '#7dd3fc', accent2: '#94a3b8' },
-            roast:  { bg1: '#261b2a', bg2: '#3a2640', primary: '#ff8ab3', accent: '#ff6b9a', accent2: '#ffbd59' },
-            conversation: { bg1: '#1b1a27', bg2: '#2a2740', primary: '#8a7dff', accent: '#4ecdc4', accent2: '#8bdbb6' }
+        // Avatar per mode (full URLs via Jinja)
+        const MODE_AVATARS = {
+            angry: "{{ url_for('static', filename='key.png') }}",
+            sarcastic: "{{ url_for('static', filename='steve.png') }}",
+            roast: "{{ url_for('static', filename='rick.png') }}",
+            conversation: "{{ url_for('static', filename='prez.png') }}"
         };
+        function updateAvatar(mode) {
+            const img = document.getElementById('mode-avatar');
+            if (!img) return;
+            img.src = MODE_AVATARS[mode] || MODE_AVATARS.conversation;
+        }
+
+        // Provide a safe applyTheme implementation to avoid ReferenceErrors
+        // If you later add themed styles, extend this to toggle classes or CSS variables.
         function applyTheme(mode) {
-            const t = MODE_THEMES[mode] || MODE_THEMES.conversation;
-            const root = document.documentElement;
-            root.style.setProperty('--bg1', t.bg1);
-            root.style.setProperty('--bg2', t.bg2);
-            root.style.setProperty('--primary', t.primary);
-            root.style.setProperty('--accent', t.accent);
-            root.style.setProperty('--accent-2', t.accent2);
+            // no-op for now; reserved for future theming per mode
         }
 
         function updateModeDescription(mode) {
@@ -597,8 +606,9 @@
                 statusDiv.className = 'status recording';
                 statusDiv.innerHTML = '<div class="spinner"></div>' + data.message;
             } else if (data.step === 'complete') {
-                statusDiv.className = 'status success';
-                statusDiv.textContent = '✅ ' + data.message;
+                // Hide final "all done" message to keep UI clean
+                statusDiv.className = 'status';
+                statusDiv.textContent = '';
                 recordBtn.disabled = false;
                 
                 // Show controls only for conversation mode
