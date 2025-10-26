@@ -325,11 +325,17 @@ def load_mode_config(mode: str) -> tuple:
     
     try:
         # Dynamic import of the appropriate prompts module
-        prompts_module = __import__(module_name)
+        if mode.lower() == "angry":
+            from prompts.prompts import TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT, LANGUAGE_TEMPLATE
+        elif mode.lower() == "sarcastic":
+            from prompts.prompts_sarcastic import TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT, LANGUAGE_TEMPLATE
+        elif mode.lower() == "roast":
+            from prompts.prompts_heckle import TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT, LANGUAGE_TEMPLATE
+        
         return (
-            prompts_module.TRANSLATOR_SYSTEM_PROMPT,
-            prompts_module.TTS_SYSTEM_PROMPT,
-            prompts_module.LANGUAGE_TEMPLATE
+            TRANSLATOR_SYSTEM_PROMPT,
+            TTS_SYSTEM_PROMPT,
+            LANGUAGE_TEMPLATE
         )
     except ImportError as e:
         raise ImportError(f"Failed to import module '{module_name}': {e}")
@@ -410,8 +416,6 @@ def main():
             language_instruction = ""
             
         llm_system_prompt = TRANSLATOR_SYSTEM_PROMPT.format(language_instruction=language_instruction, language_instruction_repeated=language_instruction)
-        with open("prepared_llm.txt", "w") as f:
-            f.write(llm_system_prompt)
     except (ValueError, ImportError, AttributeError) as e:
         print(f"❌ Error loading mode configuration: {e}")
         return

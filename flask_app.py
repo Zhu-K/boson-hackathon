@@ -237,8 +237,6 @@ def handle_recording(data):
         # Load mode configuration (for emotion translation) - NEW: Using streaming script logic
         try:
             TRANSLATOR_SYSTEM_PROMPT, TTS_SYSTEM_PROMPT, LANGUAGE_TEMPLATE = load_mode_config(mode)
-            with open("tts_system_prompt.txt", "w") as f:
-                f.write(TTS_SYSTEM_PROMPT)
             if language != "english":
                 language_instruction = LANGUAGE_TEMPLATE.format(language=language)
             else:
@@ -248,9 +246,6 @@ def handle_recording(data):
                 language_instruction=language_instruction, 
                 language_instruction_repeated=language_instruction
             )
-            # Save prepared LLM prompt for debugging
-            with open("prepared_llm.txt", "w") as f:
-                f.write(llm_system_prompt)
         except (ValueError, ImportError, AttributeError) as e:
             emit('error', {'message': f"Error loading mode configuration: {e}"})
             return
