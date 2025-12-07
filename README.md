@@ -4,6 +4,8 @@
 
 An AI pocket comedian you can talk to. Speak into your mic, get a playful response performed back to you in real time. Runs as a Flask server with Socket.IO streaming and a simple, polished web UI.
 
+[![Demo Video](./img/PocketComedianDemo.png)]([https://github.com/<user>/<repo>/blob/main/video.mp4](https://drive.google.com/file/d/1FWibTVeMTMgai_1hUfri3QuNI1jqWVsz/view?usp=drive_link))
+
 ## Quick Start
 
 1) Python environment
